@@ -6,7 +6,8 @@ import com.dststore.message.Message;
 import com.dststore.message.MessageType;
 import com.dststore.message.SetRequest;
 import com.dststore.message.SetResponse;
-import com.dststore.network.MessageBus;
+import com.dststore.network.IMessageBus;
+import com.dststore.network.MessageHandler;
 import com.dststore.storage.KeyValueStore;
 import com.dststore.storage.TimestampedValue;
 import com.dststore.metrics.Metrics;
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -26,7 +28,7 @@ public class Replica {
     
     private final String replicaId;
     private final KeyValueStore store;
-    private final MessageBus messageBus;
+    private final IMessageBus messageBus;
     private final Metrics metrics;
     
     // Statistics
@@ -45,7 +47,7 @@ public class Replica {
      * @param messageBus The message bus for communication
      * @param metrics The metrics for recording request handling
      */
-    public Replica(String replicaId, MessageBus messageBus, Metrics metrics) {
+    public Replica(String replicaId, IMessageBus messageBus, Metrics metrics) {
         this.replicaId = replicaId;
         this.messageBus = messageBus;
         this.store = new KeyValueStore(replicaId);
@@ -67,16 +69,9 @@ public class Replica {
      * This method is called by the simulation loop to ensure deterministic execution.
      */
     public void tick() {
-        if (!running) {
-            return;
-        }
-        
         // The actual message processing is done by the message handlers
         // This method is here for future extensions like background tasks,
         // maintenance operations, or state reconciliation
-        
-        // Tick the message bus to process any queued messages
-        messageBus.tick();
     }
     
     /**
@@ -99,9 +94,11 @@ public class Replica {
      * Connects this replica to another replica.
      *
      * @param targetReplicaId The ID of the replica to connect to
+     * @param host The host address of the target replica
+     * @param port The port number of the target replica
      */
-    public void connectTo(String targetReplicaId) {
-        messageBus.connect(targetReplicaId);
+    public void connectTo(String targetReplicaId, String host, int port) {
+        messageBus.connect(targetReplicaId, host, port);
         logger.info("Replica {} connected to replica {}", replicaId, targetReplicaId);
     }
     
@@ -153,126 +150,163 @@ public class Replica {
     }
     
     /**
+     * Checks if the replica is currently running.
+     *
+     * @return true if the replica is running, false otherwise
+     */
+    public boolean isRunning() {
+        return running;
+    }
+    
+    /**
      * Registers message handlers for different message types.
      */
     private void registerMessageHandlers() {
-        // Handler for GET requests
-        messageBus.registerHandler(new MessageBus.MessageHandler() {
+        messageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.GET_REQUEST;
             }
-            
+
             @Override
             public void handleMessage(Message message) {
+                messageTypeCounts.get(MessageType.GET_REQUEST).incrementAndGet();
                 if (!running) {
-                    logger.warn("Ignoring GET_REQUEST message, replica {} is not running", replicaId);
+                    logger.warn("Ignoring {} message, replica {} is not running", message.getType(), replicaId);
                     return;
                 }
-                
-                totalRequests.incrementAndGet();
-                messageTypeCounts.get(MessageType.GET_REQUEST).incrementAndGet();
-                
-                GetRequest request = (GetRequest) message;
-                logger.debug("Replica {} handling GET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
-                
-                // Process the GET request with consistency handling
-                String key = request.getKey();
-                TimestampedValue value = store.getWithTimestamp(key);
-                
-                GetResponse response;
-                if (value != null) {
-                    // Success - key found
-                    response = new GetResponse(
-                        replicaId,
-                        request.getSourceId(),
-                        key,
-                        value.getValue(),
-                        value.getTimestamp()
-                    );
-                    response.setMessageId(request.getMessageId());
-                    successfulRequests.incrementAndGet();
-                    metrics.recordSuccessfulRequest();
-                } else {
-                    // Failure - key not found
-                    response = new GetResponse(
-                        replicaId,
-                        request.getSourceId(),
-                        key,
-                        "Key not found"
-                    );
-                    response.setMessageId(request.getMessageId());
-                    failedRequests.incrementAndGet();
-                    metrics.recordFailedRequest();
+                if (message instanceof GetRequest getRequest) {
+                    handleGetRequest(getRequest);
                 }
-                
-                // Implement conflict resolution if needed
-                // Example: Compare timestamps and resolve conflicts
-
-                // Send the response
-                messageBus.queueMessage(response);
-                
-                logger.debug("Replica {} sending GET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
             }
         });
-        
-        // Handler for SET requests
-        messageBus.registerHandler(new MessageBus.MessageHandler() {
+
+        messageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.SET_REQUEST;
             }
-            
+
             @Override
             public void handleMessage(Message message) {
+                messageTypeCounts.get(MessageType.SET_REQUEST).incrementAndGet();
                 if (!running) {
-                    logger.warn("Ignoring SET_REQUEST message, replica {} is not running", replicaId);
+                    logger.warn("Ignoring {} message, replica {} is not running", message.getType(), replicaId);
                     return;
                 }
-                
-                totalRequests.incrementAndGet();
-                messageTypeCounts.get(MessageType.SET_REQUEST).incrementAndGet();
-                
-                SetRequest request = (SetRequest) message;
-                logger.debug("Replica {} handling SET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
-                
-                // Process the SET request
-                String key = request.getKey();
-                String value = request.getValue();
-                long timestamp = request.getValueTimestamp();
-                
-                boolean success = store.set(key, value, timestamp);
-                
-                // Create and send response
-                SetResponse response = new SetResponse(
-                    replicaId,
-                    request.getSourceId(),
-                    key,
-                    success ? timestamp : 0L
-                );
-                response.setMessageId(request.getMessageId());
-                
-                if (success) {
-                    successfulRequests.incrementAndGet();
-                    metrics.recordSuccessfulRequest();
-                } else {
-                    failedRequests.incrementAndGet();
-                    metrics.recordFailedRequest();
-                    // Make it an error response
-                    response = new SetResponse(
-                        replicaId,
-                        request.getSourceId(),
-                        key,
-                        "Write rejected due to timestamp conflict"
-                    );
-                    response.setMessageId(request.getMessageId());
+                if (message instanceof SetRequest setRequest) {
+                    handleSetRequest(setRequest);
                 }
-                
-                // Send the response
-                messageBus.queueMessage(response);
-                
-                logger.debug("Replica {} sending SET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
             }
         });
+    }
+
+    private void handleGetRequest(GetRequest request) {
+        if (!running) {
+            logger.warn("Ignoring GET_REQUEST message, replica {} is not running", replicaId);
+            return;
+        }
+        
+        totalRequests.incrementAndGet();
+        
+        logger.debug("Replica {} handling GET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
+        
+        // Process the GET request with consistency handling
+        String key = request.getKey();
+        TimestampedValue value = store.getWithTimestamp(key);
+        
+        GetResponse response;
+        if (value != null) {
+            // Success - key found
+            response = new GetResponse(
+                request.getMessageId(),
+                System.currentTimeMillis(),
+                replicaId,
+                request.getSourceId(),
+                key,
+                value.getValue(),
+                true,
+                null,
+                value.getTimestamp()
+            );
+            successfulRequests.incrementAndGet();
+            metrics.recordSuccessfulRequest();
+        } else {
+            // Failure - key not found
+            response = new GetResponse(
+                request.getMessageId(),
+                System.currentTimeMillis(),
+                replicaId,
+                request.getSourceId(),
+                key,
+                null,
+                false,
+                "Key not found",
+                0
+            );
+            failedRequests.incrementAndGet();
+            metrics.recordFailedRequest();
+        }
+        
+        // Send the response
+        messageBus.sendMessage(response);
+        
+        logger.debug("Replica {} sending GET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
+    }
+
+    private void handleSetRequest(SetRequest request) {
+        if (!running) {
+            logger.warn("Ignoring SET_REQUEST message, replica {} is not running", replicaId);
+            return;
+        }
+        
+        totalRequests.incrementAndGet();
+        
+        logger.debug("Replica {} handling SET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
+        
+        // Process the SET request with consistency handling
+        String key = request.getKey();
+        String value = request.getValue();
+        long timestamp = request.getValueTimestamp();
+        
+        // Check for timestamp conflict before setting
+        TimestampedValue existingValue = store.getWithTimestamp(key);
+        String errorMessage = null;
+        boolean success;
+        
+        if (existingValue != null && existingValue.getTimestamp() > timestamp) {
+            success = false;
+            errorMessage = String.format("Timestamp conflict: existing value has timestamp %d which is newer than request timestamp %d",
+                existingValue.getTimestamp(), timestamp);
+        } else {
+            success = store.set(key, value, timestamp);
+            if (!success) {
+                errorMessage = "Failed to set value";
+            }
+        }
+        
+        SetResponse response = new SetResponse(
+            request.getMessageId(),
+            System.currentTimeMillis(),
+            replicaId,
+            request.getSourceId(),
+            key,
+            success,
+            errorMessage,
+            timestamp
+        );
+        
+        if (success) {
+            successfulRequests.incrementAndGet();
+            metrics.recordSuccessfulRequest();
+        } else {
+            failedRequests.incrementAndGet();
+            metrics.recordFailedRequest();
+        }
+        
+        // Send the response
+        messageBus.sendMessage(response);
+        
+        logger.debug("Replica {} sending SET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
     }
 } 

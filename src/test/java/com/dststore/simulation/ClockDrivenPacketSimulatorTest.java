@@ -1,7 +1,7 @@
 package com.dststore.simulation;
 
 import com.dststore.network.Packet;
-import com.dststore.network.PacketListener;
+import com.dststore.network.PacketDeliveryListener;
 import com.dststore.network.PacketSimulator;
 import com.dststore.network.Path;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +30,7 @@ public class ClockDrivenPacketSimulatorTest {
         deliveredPackets = new ArrayList<>();
         
         // Register a listener to track packet delivery
-        PacketListener listener = (packet, tick) -> deliveredPackets.add(packet);
+        PacketDeliveryListener listener = (packet, tick) -> deliveredPackets.add(packet);
         packetSimulator.registerListener("node-2", listener);
         
         // Create the integrated simulator

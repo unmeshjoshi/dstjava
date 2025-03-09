@@ -1,16 +1,15 @@
 package com.dststore.network;
 
+import com.dststore.message.Message;
+
 /**
- * Interface for components that need to be notified when packets are delivered.
+ * Interface for components that need to receive network messages.
  */
-@FunctionalInterface
 public interface PacketListener {
-    
     /**
-     * Called when a packet is delivered to its destination.
+     * Called when a message is received.
      *
-     * @param packet The packet that was delivered
-     * @param currentTick The current simulation tick when delivery occurred
+     * @param message The received message
      */
-    void onPacketDelivered(Packet packet, long currentTick);
+    void onPacketReceived(Message message);
 } 

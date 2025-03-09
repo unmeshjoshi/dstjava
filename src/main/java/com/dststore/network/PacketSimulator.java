@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Core packet simulator for deterministic network simulation.
@@ -25,7 +26,7 @@ public class PacketSimulator {
     private final PacketSimulatorStats stats;
     
     // Packet delivery listeners
-    private final Map<String, PacketListener> listeners;
+    private final Map<String, PacketDeliveryListener> listeners;
     
     private final Set<String> partitionedNodes = new HashSet<>();
     
@@ -40,7 +41,7 @@ public class PacketSimulator {
         this.deliveryQueue = new PriorityQueue<>();
         this.currentTick = 0;
         this.stats = new PacketSimulatorStats();
-        this.listeners = new HashMap<>();
+        this.listeners = new ConcurrentHashMap<>();
     }
     
     /**
@@ -119,19 +120,19 @@ public class PacketSimulator {
     }
     
     /**
-     * Registers a listener for packets delivered to a specific node.
+     * Registers a listener for packet delivery to a specific node.
      *
-     * @param nodeId The node ID to listen for packets
-     * @param listener The listener to notify on packet delivery
+     * @param nodeId The ID of the node to receive packets for
+     * @param listener The listener to notify when packets are delivered
      */
-    public void registerListener(String nodeId, PacketListener listener) {
+    public void registerListener(String nodeId, PacketDeliveryListener listener) {
         listeners.put(nodeId, listener);
     }
     
     /**
      * Unregisters a listener for a specific node.
      *
-     * @param nodeId The node ID to stop listening for
+     * @param nodeId The ID of the node to stop receiving packets for
      */
     public void unregisterListener(String nodeId) {
         listeners.remove(nodeId);
@@ -164,7 +165,7 @@ public class PacketSimulator {
             ScheduledPacket packet = deliveryQueue.poll();
             String key = packet.packet.getPath().getSourceId() + "-" + packet.packet.getPath().getTargetId();
             if (!partitionedNodes.contains(key)) {
-                PacketListener listener = listeners.get(packet.packet.getPath().getTargetId());
+                PacketDeliveryListener listener = listeners.get(packet.packet.getPath().getTargetId());
                 if (listener != null) {
                     listener.onPacketDelivered(packet.packet, currentTick);
                     stats.recordPacketDelivered(packet.packet, currentTick);

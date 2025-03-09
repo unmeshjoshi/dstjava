@@ -1,51 +1,59 @@
 package com.dststore.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.UUID;
 
 /**
  * Response to a GetRequest containing the requested value from the key-value store.
  */
 public class GetResponse extends Message {
-    private String key;
-    private String value;
-    private boolean successful;
-    private String errorMessage;
-    private long valueTimestamp;
+    private final String key;
+    private final String value;
+    private final boolean successful;
+    private final String errorMessage;
+    private final long valueTimestamp;
 
     /**
      * Default constructor for Jackson deserialization.
      */
-    public GetResponse() {
+    protected GetResponse() {
         super();
-    }
-
-    /**
-     * Create a new successful GetResponse with a value.
-     */
-    public GetResponse(String sourceId, String targetId, String key, String value, long valueTimestamp) {
-        super(sourceId, targetId);
-        this.key = key;
-        this.value = value;
-        this.valueTimestamp = valueTimestamp;
-        this.successful = true;
-    }
-
-    /**
-     * Create a new failed GetResponse with an error message.
-     */
-    public GetResponse(String sourceId, String targetId, String key, String errorMessage) {
-        super(sourceId, targetId);
-        this.key = key;
-        this.errorMessage = errorMessage;
+        this.key = null;
+        this.value = null;
         this.successful = false;
+        this.errorMessage = null;
+        this.valueTimestamp = 0;
     }
 
     /**
-     * Constructor with all fields.
+     * Creates a new GetResponse.
+     *
+     * @param sourceId The source node ID
+     * @param targetId The target node ID
+     * @param key The requested key
+     * @param value The value found (may be null)
+     * @param successful Whether the request was successful
+     * @param errorMessage Error message if not successful
      */
-    public GetResponse(UUID messageId, long timestamp, String sourceId, String targetId, 
-                      String key, String value, boolean successful, String errorMessage, long valueTimestamp) {
-        super(messageId, timestamp, sourceId, targetId);
+    public GetResponse(String sourceId, String targetId, String key, String value, boolean successful, String errorMessage) {
+        this(sourceId, targetId, key, value, successful, errorMessage, System.currentTimeMillis());
+    }
+
+    /**
+     * Creates a new GetResponse with value timestamp.
+     *
+     * @param sourceId The source node ID
+     * @param targetId The target node ID
+     * @param key The requested key
+     * @param value The value found (may be null)
+     * @param successful Whether the request was successful
+     * @param errorMessage Error message if not successful
+     * @param valueTimestamp The timestamp of the value
+     */
+    public GetResponse(String sourceId, String targetId, String key, String value, 
+                      boolean successful, String errorMessage, long valueTimestamp) {
+        super(sourceId, targetId, MessageType.GET_RESPONSE);
         this.key = key;
         this.value = value;
         this.successful = successful;
@@ -53,48 +61,77 @@ public class GetResponse extends Message {
         this.valueTimestamp = valueTimestamp;
     }
 
+    /**
+     * Creates a new GetResponse with all fields.
+     *
+     * @param messageId The message ID
+     * @param timestamp The message timestamp
+     * @param sourceId The source node ID
+     * @param targetId The target node ID
+     * @param key The requested key
+     * @param value The value found (may be null)
+     * @param successful Whether the request was successful
+     * @param errorMessage Error message if not successful
+     * @param valueTimestamp The timestamp of the value
+     */
+    @JsonCreator
+    public GetResponse(
+        @JsonProperty("messageId") UUID messageId,
+        @JsonProperty("timestamp") long timestamp,
+        @JsonProperty("sourceId") String sourceId,
+        @JsonProperty("targetId") String targetId,
+        @JsonProperty("key") String key,
+        @JsonProperty("value") String value,
+        @JsonProperty("successful") boolean successful,
+        @JsonProperty("errorMessage") String errorMessage,
+        @JsonProperty("valueTimestamp") long valueTimestamp) {
+        super(messageId, timestamp, sourceId, targetId, MessageType.GET_RESPONSE);
+        this.key = key;
+        this.value = value;
+        this.successful = successful;
+        this.errorMessage = errorMessage;
+        this.valueTimestamp = valueTimestamp;
+    }
+
+    @JsonProperty("key")
     public String getKey() {
         return key;
     }
 
-    public void setKey(String key) {
-        this.key = key;
-    }
-
+    @JsonProperty("value")
     public String getValue() {
         return value;
     }
 
-    public void setValue(String value) {
-        this.value = value;
-    }
-
+    @JsonProperty("successful")
     public boolean isSuccessful() {
         return successful;
     }
 
-    public void setSuccessful(boolean successful) {
-        this.successful = successful;
-    }
-
+    @JsonProperty("errorMessage")
     public String getErrorMessage() {
         return errorMessage;
     }
 
-    public void setErrorMessage(String errorMessage) {
-        this.errorMessage = errorMessage;
-    }
-
+    @JsonProperty("valueTimestamp")
     public long getValueTimestamp() {
         return valueTimestamp;
-    }
-
-    public void setValueTimestamp(long valueTimestamp) {
-        this.valueTimestamp = valueTimestamp;
     }
 
     @Override
     public MessageType getType() {
         return MessageType.GET_RESPONSE;
+    }
+
+    @Override
+    public Message withSourceId(String newSourceId) {
+        return new GetResponse(getMessageId(), getTimestamp(), newSourceId, getTargetId(), 
+                             key, value, successful, errorMessage, valueTimestamp);
+    }
+
+    @Override
+    public Message withTargetId(String newTargetId) {
+        return new GetResponse(getMessageId(), getTimestamp(), getSourceId(), newTargetId, 
+                             key, value, successful, errorMessage, valueTimestamp);
     }
 } 

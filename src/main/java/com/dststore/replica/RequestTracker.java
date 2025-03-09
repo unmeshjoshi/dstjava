@@ -26,6 +26,8 @@ public class RequestTracker<T extends Message> {
     private final AtomicInteger responseCount = new AtomicInteger(0);
     private volatile boolean quorumReached = false;
     private CompletableFuture<T> future;
+    private final AtomicInteger attempts = new AtomicInteger(0);
+    private Message originalRequest;
 
     /**
      * Creates a new RequestTracker for the specified request ID and quorum size.
@@ -119,5 +121,39 @@ public class RequestTracker<T extends Message> {
      */
     public CompletableFuture<T> getFuture() {
         return future;
+    }
+
+    /**
+     * Gets the number of attempts made to fulfill this request.
+     *
+     * @return The number of attempts
+     */
+    public int getAttempts() {
+        return attempts.get();
+    }
+
+    /**
+     * Increments the number of attempts made to fulfill this request.
+     */
+    public void incrementAttempts() {
+        attempts.incrementAndGet();
+    }
+
+    /**
+     * Sets the original request that initiated this tracking.
+     *
+     * @param request The original request message
+     */
+    public void setOriginalRequest(Message request) {
+        this.originalRequest = request;
+    }
+
+    /**
+     * Gets the original request that initiated this tracking.
+     *
+     * @return The original request message
+     */
+    public Message getOriginalRequest() {
+        return originalRequest;
     }
 } 

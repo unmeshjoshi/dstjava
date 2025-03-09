@@ -120,7 +120,8 @@ public class MessageSerializationTest {
         String errorMessage = null;
         long valueTimestamp = timestamp;
 
-        GetResponse response = new GetResponse(messageId, timestamp, sourceId, targetId, key, value, successful, errorMessage, valueTimestamp);
+        GetResponse response = new GetResponse(messageId,
+                timestamp, sourceId, targetId, key, value, successful, errorMessage, valueTimestamp);
 
         // Act
         String json = objectMapper.writeValueAsString(response);
@@ -151,9 +152,7 @@ public class MessageSerializationTest {
         String key = "test-key";
         String errorMessage = "Key not found";
 
-        GetResponse response = new GetResponse(sourceId, targetId, key, errorMessage);
-        response.setMessageId(messageId);
-        response.setTimestamp(timestamp);
+        GetResponse response = new GetResponse(UUID.fromString(messageId.toString()), timestamp, sourceId, targetId, key, null, false, errorMessage, 0L);
 
         // Act
         String json = objectMapper.writeValueAsString(response);

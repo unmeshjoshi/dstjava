@@ -1,0 +1,124 @@
+f22:40:19.123 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.124 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.124 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.124 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+‰22:40:19.125 [Test worker] WARN  com.dststore.network.MessageBus - Message source ID is not this node (wrong-node vs node-1), correcting
+	f22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+	f22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+	h22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+	h22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+	f22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node1B
+	f22:40:19.132 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node2B
+
+f22:40:19.133 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+
+f22:40:19.133 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+
+h22:40:19.133 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+
+h22:40:19.133 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+
+m22:40:19.133 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 disconnected from node node-2
+
+{22:40:19.133 [Test worker] WARN  com.dststore.network.MessageBus - Attempting to send message to disconnected node: node-2
+f22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-A
+f22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-B
+h22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Node node-A connected to node node-B
+h22:40:19.134 [Test worker] INFO  com.dststore.network.MessageBus - Node node-B connected to node node-A
+f22:40:19.135 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-A
+f22:40:19.135 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-B
+h22:40:19.135 [Test worker] INFO  com.dststore.network.MessageBus - Node node-A connected to node node-B
+h22:40:19.135 [Test worker] INFO  com.dststore.network.MessageBus - Node node-B connected to node node-A
+f22:40:19.144 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.144 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.144 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.144 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+•22:40:19.144 [Test worker] ERROR com.dststore.network.MessageBus - Cannot send message with null target ID: com.dststore.message.GetRequest@5bf61e67
+f22:40:19.145 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.145 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.145 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.146 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.147 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.147 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.147 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.147 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.150 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.150 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.150 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.150 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.153 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.153 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.153 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.153 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.154 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.154 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.154 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.154 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.155 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-3
+h22:40:19.155 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-3
+h22:40:19.155 [Test worker] INFO  com.dststore.network.MessageBus - Node node-3 connected to node node-1
+f22:40:19.160 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.160 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.160 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.160 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.165 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.165 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.165 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.166 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.166 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.167 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.167 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.167 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.170 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.170 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.170 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.170 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.171 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.171 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.171 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.171 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.172 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.172 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.173 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.173 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+f22:40:19.176 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-1
+f22:40:19.176 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node node-2
+h22:40:19.176 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 connected to node node-2
+h22:40:19.176 [Test worker] INFO  com.dststore.network.MessageBus - Node node-2 connected to node node-1
+m22:40:19.176 [Test worker] INFO  com.dststore.network.MessageBus - Node node-1 disconnected from node node-2
+A@f22:40:19.206 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node client
+A@q22:40:19.207 [Test worker] INFO  com.dststore.replica.RequestHandler - Created RequestHandler for replica client
+A@i22:40:19.207 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node replica-1
+A@s22:40:19.210 [Test worker] INFO  com.dststore.storage.KeyValueStore - Loaded 4 keys from data/replica-1-store.json
+A@x22:40:19.210 [Test worker] INFO  com.dststore.storage.KeyValueStore - Initialized KeyValueStore 'replica-1' with 4 keys
+A@^22:40:19.210 [Test worker] INFO  com.dststore.replica.Replica - Initialized replica replica-1
+A@i22:40:19.210 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node replica-2
+A@s22:40:19.211 [Test worker] INFO  com.dststore.storage.KeyValueStore - Loaded 3 keys from data/replica-2-store.json
+A@x22:40:19.211 [Test worker] INFO  com.dststore.storage.KeyValueStore - Initialized KeyValueStore 'replica-2' with 3 keys
+A@^22:40:19.211 [Test worker] INFO  com.dststore.replica.Replica - Initialized replica replica-2
+A@i22:40:19.211 [Test worker] INFO  com.dststore.network.MessageBus - Created MessageBus for node replica-3
+A@‘22:40:19.211 [Test worker] INFO  com.dststore.storage.KeyValueStore - No data file found at data/replica-3-store.json, starting with empty store
+A@x22:40:19.211 [Test worker] INFO  com.dststore.storage.KeyValueStore - Initialized KeyValueStore 'replica-3' with 0 keys
+A@^22:40:19.211 [Test worker] INFO  com.dststore.replica.Replica - Initialized replica replica-3
+A@}22:40:19.212 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Started TCP MessageBus for node client on port 60979
+A@€22:40:19.212 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Started TCP MessageBus for node replica-1 on port 60980
+A@€22:40:19.212 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Started TCP MessageBus for node replica-2 on port 60981
+A@€22:40:19.212 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Started TCP MessageBus for node replica-3 on port 60982
+A@d22:40:19.212 [Test worker] INFO  com.dststore.replica.RequestHandler - Registered replica replica-1
+A@d22:40:19.213 [Test worker] INFO  com.dststore.replica.RequestHandler - Registered replica replica-2
+A@d22:40:19.213 [Test worker] INFO  com.dststore.replica.RequestHandler - Registered replica replica-3
+A@Z22:40:19.213 [Test worker] INFO  com.dststore.replica.Replica - Started replica replica-1
+A@Z22:40:19.213 [Test worker] INFO  com.dststore.replica.Replica - Started replica replica-2
+A@Z22:40:19.213 [Test worker] INFO  com.dststore.replica.Replica - Started replica replica-3
+A@Z22:40:19.213 [Test worker] INFO  com.dststore.replica.Replica - Stopped replica replica-1
+A@v22:40:19.213 [Test worker] WARN  c.dststore.network.tcp.TcpMessageBus - No connection found for target node replica-2
+A@w22:40:19.214 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Connected to node replica-2 at localhost:60981
+A@t22:40:19.214 [Thread-3] INFO  c.dststore.network.tcp.TcpMessageBus - Connected to node replica-1 at localhost:60980
+A@m22:40:19.214 [Thread-5] INFO  c.dststore.network.tcp.TcpMessageBus - Established connection with node client
+A@m22:40:19.214 [Thread-4] INFO  c.dststore.network.tcp.TcpMessageBus - Established connection with node client
+A@w22:40:19.227 [Test worker] INFO  c.dststore.network.tcp.TcpMessageBus - Connected to node replica-3 at localhost:60982
+A@m22:40:19.227 [Thread-6] INFO  c.dststore.network.tcp.TcpMessageBus - Established connection with node client

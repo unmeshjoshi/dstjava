@@ -33,6 +33,13 @@ application {
     mainClass = 'com.dststore.Main'
 }
 
+
+compileJava {
+    //For jackson to use property based constructor
+    options.compilerArgs << '-parameters'
+}
+
 test {
+    jvmArgs '--illegal-access=permit'
     useJUnitPlatform()
-} 
+}

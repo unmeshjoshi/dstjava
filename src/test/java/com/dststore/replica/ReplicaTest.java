@@ -10,15 +10,24 @@ import com.dststore.network.MessageBus;
 import com.dststore.network.PacketSimulator;
 import com.dststore.storage.TimestampedValue;
 import com.dststore.metrics.Metrics;
+import com.dststore.network.IMessageBus;
+import com.dststore.network.MessageHandler;
+import com.dststore.network.PacketListener;
+import com.dststore.simulation.SimulatedClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for the Replica class.
@@ -73,7 +82,7 @@ public class ReplicaTest {
         AtomicReference<SetResponse> responseRef = new AtomicReference<>();
         
         // Register a handler for SET_RESPONSE messages
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.SET_RESPONSE;
@@ -124,7 +133,7 @@ public class ReplicaTest {
         AtomicReference<GetResponse> responseRef = new AtomicReference<>();
         
         // Register a handler for GET_RESPONSE messages
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.GET_RESPONSE;
@@ -170,7 +179,7 @@ public class ReplicaTest {
         AtomicReference<GetResponse> responseRef = new AtomicReference<>();
         
         // Register a handler for GET_RESPONSE messages
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.GET_RESPONSE;
@@ -218,7 +227,7 @@ public class ReplicaTest {
         AtomicReference<SetResponse> responseRef = new AtomicReference<>();
         
         // Register a handler for SET_RESPONSE messages
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.SET_RESPONSE;
@@ -270,7 +279,7 @@ public class ReplicaTest {
         AtomicReference<GetResponse> responseRef = new AtomicReference<>();
         
         // Register a handler for GET_RESPONSE messages
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.GET_RESPONSE;
@@ -326,7 +335,7 @@ public class ReplicaTest {
         AtomicReference<GetResponse> getResponseRef = new AtomicReference<>();
         
         // Register handlers for both types of responses
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.SET_RESPONSE;
@@ -340,7 +349,7 @@ public class ReplicaTest {
             }
         });
         
-        clientMessageBus.registerHandler(new MessageBus.MessageHandler() {
+        clientMessageBus.registerHandler(new MessageHandler() {
             @Override
             public MessageType getHandledType() {
                 return MessageType.GET_RESPONSE;
@@ -390,5 +399,31 @@ public class ReplicaTest {
         assertThat(stats.get("successfulRequests")).isEqualTo(2);
         assertThat(stats.get("messages.SET_REQUEST")).isEqualTo(1);
         assertThat(stats.get("messages.GET_REQUEST")).isEqualTo(1);
+    }
+
+    @Test
+    void testGetRequest() {
+        // Arrange
+        String testKey = "test-key";
+        String testValue = "test-value";
+        long timestamp = System.currentTimeMillis();
+        
+        // Set up initial data
+        replica1.getStore().set(testKey, testValue, timestamp);
+        
+        // Act
+        GetRequest request = new GetRequest("client", "replica-1", testKey);
+        clientMessageBus.queueMessage(request);
+        
+        // Wait for a few ticks to allow message processing
+        for (int i = 0; i < 5; i++) {
+            clientMessageBus.tick();
+            replica1MessageBus.tick();
+            packetSimulator.tick();
+        }
+        
+        // Assert
+        Map<String, Long> stats = replica1.getStats();
+        assertThat(stats.get("messages.GET_REQUEST")).isEqualTo(1L);
     }
 } 

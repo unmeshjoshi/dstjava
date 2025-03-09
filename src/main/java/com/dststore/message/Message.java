@@ -23,10 +23,11 @@ import java.util.UUID;
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
 public abstract class Message {
-    private UUID messageId;
-    private long timestamp;
-    private String sourceId;
-    private String targetId;
+    private final UUID messageId;
+    private final long timestamp;
+    private final String sourceId;
+    private final String targetId;
+    private final MessageType type;
 
     /**
      * Default constructor for Jackson deserialization.
@@ -34,62 +35,66 @@ public abstract class Message {
     protected Message() {
         this.messageId = UUID.randomUUID();
         this.timestamp = System.currentTimeMillis();
+        this.sourceId = null;
+        this.targetId = null;
+        this.type = null;
     }
 
     /**
      * Constructor with all fields.
      */
-    protected Message(UUID messageId, long timestamp, String sourceId, String targetId) {
+    protected Message(UUID messageId, long timestamp, String sourceId, String targetId, MessageType type) {
         this.messageId = messageId;
         this.timestamp = timestamp;
         this.sourceId = sourceId;
         this.targetId = targetId;
+        this.type = type;
     }
 
     /**
      * Create a new message with a random UUID and current timestamp.
      */
-    protected Message(String sourceId, String targetId) {
+    protected Message(String sourceId, String targetId, MessageType type) {
         this.messageId = UUID.randomUUID();
         this.timestamp = System.currentTimeMillis();
         this.sourceId = sourceId;
         this.targetId = targetId;
+        this.type = type;
     }
 
     public UUID getMessageId() {
         return messageId;
     }
 
-    public void setMessageId(UUID messageId) {
-        this.messageId = messageId;
-    }
-
     public long getTimestamp() {
         return timestamp;
-    }
-
-    public void setTimestamp(long timestamp) {
-        this.timestamp = timestamp;
     }
 
     public String getSourceId() {
         return sourceId;
     }
 
-    public void setSourceId(String sourceId) {
-        this.sourceId = sourceId;
-    }
-
     public String getTargetId() {
         return targetId;
     }
 
-    public void setTargetId(String targetId) {
-        this.targetId = targetId;
+    public MessageType getType() {
+        return type;
     }
 
     /**
-     * Get the type of message for type discrimination.
+     * Creates a new message with the specified source ID.
+     *
+     * @param newSourceId The new source ID
+     * @return A new message with the updated source ID
      */
-    public abstract MessageType getType();
+    public abstract Message withSourceId(String newSourceId);
+
+    /**
+     * Creates a new message with the specified target ID.
+     *
+     * @param newTargetId The new target ID
+     * @return A new message with the updated target ID
+     */
+    public abstract Message withTargetId(String newTargetId);
 } 
