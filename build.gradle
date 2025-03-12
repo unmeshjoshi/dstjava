@@ -30,7 +30,7 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.dststore.Main'
+    mainClass = findProperty('mainClass') ?: 'com.dststore.Main'
 }
 
 
@@ -42,4 +42,12 @@ compileJava {
 test {
     jvmArgs '--illegal-access=permit'
     useJUnitPlatform()
+}
+
+// Add a custom task to run a specified class from the test sourceset
+task runTest(type: JavaExec) {
+    group = 'application'
+    description = 'Run a test class'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = findProperty('mainClass') ?: ''
 }
