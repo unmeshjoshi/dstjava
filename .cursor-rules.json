@@ -1,0 +1,214 @@
+{
+  "name": "DST Clean Code Standards",
+  "description": "Rules for the distributed storage system project to maintain low code toxicity and follow clean code principles",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "no-method-javadoc",
+      "name": "No Method-Level JavaDoc",
+      "description": "Avoid generating JavaDoc comments for methods. Class-level documentation is sufficient.",
+      "severity": "error",
+      "enabled": true,
+      "pattern": "^\\s*/\\*\\*(?!.*class|.*interface|.*enum).*?\\*/\\s*(?:public|private|protected)"
+    },
+    {
+      "id": "method-length",
+      "name": "Method Length",
+      "description": "Methods should not exceed 30 lines of code",
+      "severity": "warning",
+      "threshold": 30,
+      "enabled": true
+    },
+    {
+      "id": "cyclomatic-complexity",
+      "name": "Method Complexity",
+      "description": "Methods should have a cyclomatic complexity below 10",
+      "severity": "warning",
+      "threshold": 10,
+      "enabled": true
+    },
+    {
+      "id": "class-length",
+      "name": "Class Length",
+      "description": "Classes should not exceed 500 lines of code",
+      "severity": "warning",
+      "threshold": 500,
+      "enabled": true
+    },
+    {
+      "id": "parameter-count",
+      "name": "Parameter Count",
+      "description": "Methods should have no more than 6 parameters",
+      "severity": "warning",
+      "threshold": 6,
+      "enabled": true
+    },
+    {
+      "id": "nested-if-depth",
+      "name": "Nested If Depth",
+      "description": "Limit nested if statement depth to 3 levels",
+      "severity": "warning",
+      "threshold": 3,
+      "enabled": true
+    },
+    {
+      "id": "nested-try-depth",
+      "name": "Nested Try Depth",
+      "description": "Limit nested try statement depth to 2 levels",
+      "severity": "warning",
+      "threshold": 2,
+      "enabled": true
+    },
+    {
+      "id": "fan-out-complexity",
+      "name": "Class Fan-Out Complexity",
+      "description": "Classes should not depend on more than 30 other classes",
+      "severity": "warning",
+      "threshold": 30,
+      "enabled": true
+    },
+    {
+      "id": "data-abstraction-coupling",
+      "name": "Class Data Abstraction Coupling",
+      "description": "Classes should not be coupled to more than 10 other classes through fields",
+      "severity": "warning",
+      "threshold": 10,
+      "enabled": true
+    },
+    {
+      "id": "boolean-complexity",
+      "name": "Boolean Expression Complexity",
+      "description": "Boolean expressions should not exceed 3 operators",
+      "severity": "warning",
+      "threshold": 3,
+      "enabled": true
+    },
+    {
+      "id": "missing-switch-default",
+      "name": "Missing Switch Default",
+      "description": "Switch statements should have a default case",
+      "severity": "warning",
+      "enabled": true
+    },
+    {
+      "id": "incremental-change",
+      "name": "Incremental Changes",
+      "description": "Changes should be small and incremental with a plan outlined first",
+      "severity": "info",
+      "enabled": true
+    },
+    {
+      "id": "test-coverage",
+      "name": "Test Coverage",
+      "description": "New code should include tests and all tests should pass after changes",
+      "severity": "warning",
+      "enabled": true
+    }
+  ],
+  "actions": {
+    "onSave": [
+      {
+        "action": "runFormatter",
+        "enabled": true
+      }
+    ],
+    "preCommit": [
+      {
+        "action": "checkFormattingPolicy",
+        "enabled": true
+      },
+      {
+        "action": "runLinter",
+        "enabled": true
+      },
+      {
+        "action": "runTests",
+        "command": "./gradlew test",
+        "enabled": true
+      }
+    ]
+  },
+  "formatters": {
+    "java": {
+      "removeMethodJavadocs": true,
+      "preserveClassJavadocs": true,
+      "indentSize": 4,
+      "tabWidth": 4,
+      "useTabs": false,
+      "lineLength": 120
+    }
+  },
+  "linters": {
+    "java": {
+      "enabled": true,
+      "command": "./gradlew checkstyleMain"
+    }
+  },
+  "fileTemplates": {
+    "javaClass": [
+      "package ${package};",
+      "",
+      "/**",
+      " * ${description}",
+      " */",
+      "public class ${className} {",
+      "    ",
+      "}"
+    ],
+    "javaInterface": [
+      "package ${package};",
+      "",
+      "/**",
+      " * ${description}",
+      " */",
+      "public interface ${interfaceName} {",
+      "    ",
+      "}"
+    ],
+    "javaEnum": [
+      "package ${package};",
+      "",
+      "/**",
+      " * ${description}",
+      " */",
+      "public enum ${enumName} {",
+      "    ",
+      "}"
+    ],
+    "javaTest": [
+      "package ${package};",
+      "",
+      "import org.junit.jupiter.api.Test;",
+      "import static org.junit.jupiter.api.Assertions.*;",
+      "",
+      "public class ${className}Test {",
+      "    ",
+      "    @Test",
+      "    public void test${methodName}() {",
+      "        // Arrange",
+      "        ",
+      "        // Act",
+      "        ",
+      "        // Assert",
+      "        ",
+      "    }",
+      "}"
+    ]
+  },
+  "codeAnalysis": {
+    "sonarqube": {
+      "enabled": true,
+      "properties": {
+        "sonar.java.source": "11",
+        "sonar.coverage.jacoco.xmlReportPaths": "build/reports/jacoco/test/jacocoTestReport.xml",
+        "sonar.verbose": "true"
+      }
+    }
+  },
+  "git": {
+    "requireBranchPrefix": true,
+    "validPrefixes": ["feature/", "bugfix/", "hotfix/", "release/", "refactor/", "chore/", "docs/", "test/"],
+    "commitMessageTemplate": "${type}(${scope}): ${message}",
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore"]
+  }
+} 

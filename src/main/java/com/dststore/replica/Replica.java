@@ -2,311 +2,436 @@ package com.dststore.replica;
 
 import com.dststore.message.GetRequest;
 import com.dststore.message.GetResponse;
-import com.dststore.message.Message;
-import com.dststore.message.MessageType;
-import com.dststore.message.SetRequest;
-import com.dststore.message.SetResponse;
-import com.dststore.network.IMessageBus;
-import com.dststore.network.MessageHandler;
-import com.dststore.storage.KeyValueStore;
-import com.dststore.storage.TimestampedValue;
-import com.dststore.metrics.Metrics;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.dststore.message.ReplicaRequest;
+import com.dststore.message.ReplicaResponse;
+import com.dststore.message.PutRequest;
+import com.dststore.message.PutResponse;
+import com.dststore.network.MessageBus;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * A replica in the distributed key-value store.
- * Each replica maintains a local key-value store and processes incoming messages.
- */
 public class Replica {
-    private static final Logger logger = LoggerFactory.getLogger(Replica.class);
-    
     private final String replicaId;
-    private final KeyValueStore store;
-    private final IMessageBus messageBus;
-    private final Metrics metrics;
     
-    // Statistics
-    private final AtomicLong totalRequests = new AtomicLong(0);
-    private final AtomicLong successfulRequests = new AtomicLong(0);
-    private final AtomicLong failedRequests = new AtomicLong(0);
-    private final Map<MessageType, AtomicLong> messageTypeCounts = new HashMap<>();
+    private final Map<String, ReplicaEndpoint> peers;
     
-    // State
-    private boolean running = false;
+    private final Map<String, String> storage = new HashMap<>();
     
-    /**
-     * Creates a new replica with the specified ID and message bus.
-     *
-     * @param replicaId The unique identifier for this replica
-     * @param messageBus The message bus for communication
-     * @param metrics The metrics for recording request handling
-     */
-    public Replica(String replicaId, IMessageBus messageBus, Metrics metrics) {
-        this.replicaId = replicaId;
-        this.messageBus = messageBus;
-        this.store = new KeyValueStore(replicaId);
-        this.metrics = metrics;
-        
-        // Initialize message type counters
-        for (MessageType type : MessageType.values()) {
-            messageTypeCounts.put(type, new AtomicLong(0));
+    private final Map<String, QuorumTracker> pendingQuorum = new HashMap<>();
+    
+    private final int quorumSize;
+    
+    private final MessageBus messageBus;
+    
+    private long currentTick = 0;
+    
+    private final long requestTimeoutTicks;
+    
+    private final String ipAddress;
+    private final int port;
+    
+    private static final long DEFAULT_REQUEST_TIMEOUT_TICKS = 10;
+    
+    public Replica(String replicaId, MessageBus messageBus, String ipAddress, int port, 
+                   List<ReplicaEndpoint> allReplicas, long requestTimeoutTicks) {
+        // Validate inputs
+        if (replicaId == null || replicaId.isEmpty()) {
+            throw new IllegalArgumentException("Replica ID cannot be null or empty");
+        }
+        if (messageBus == null) {
+            throw new IllegalArgumentException("Message bus cannot be null");
+        }
+        if (ipAddress == null || ipAddress.isEmpty()) {
+            throw new IllegalArgumentException("IP address cannot be null or empty");
+        }
+        if (port <= 0) {
+            throw new IllegalArgumentException("Port must be a positive integer");
+        }
+        if (allReplicas == null || allReplicas.isEmpty()) {
+            throw new IllegalArgumentException("Replica list cannot be null or empty");
+        }
+        if (requestTimeoutTicks <= 0) {
+            throw new IllegalArgumentException("Request timeout ticks must be positive");
         }
         
-        // Register message handlers
-        registerMessageHandlers();
+        this.replicaId = replicaId;
+        this.messageBus = messageBus;
+        this.ipAddress = ipAddress;
+        this.port = port;
+        this.requestTimeoutTicks = requestTimeoutTicks;
         
-        logger.info("Initialized replica {}", replicaId);
+        messageBus.registerNode(replicaId);
+        
+        // Add all replicas to peers map (including self for simplicity)
+        this.peers = new HashMap<>();
+        for (ReplicaEndpoint endpoint : allReplicas) {
+            peers.put(endpoint.getReplicaId(), endpoint);
+        }
+        
+        // Calculate quorum size (majority)
+        this.quorumSize = (allReplicas.size() / 2) + 1;
+        System.out.println("Replica " + replicaId + " created with quorum size " + quorumSize + 
+                          " from " + allReplicas.size() + " replicas" +
+                          ", timeout: " + requestTimeoutTicks + " ticks");
     }
     
-    /**
-     * Advances the replica by one time unit, processing any pending operations.
-     * This method is called by the simulation loop to ensure deterministic execution.
-     */
-    public void tick() {
-        // The actual message processing is done by the message handlers
-        // This method is here for future extensions like background tasks,
-        // maintenance operations, or state reconciliation
+    public Replica(String replicaId, MessageBus messageBus, String ipAddress, int port, 
+                   List<ReplicaEndpoint> allReplicas) {
+        this(replicaId, messageBus, ipAddress, port, allReplicas, DEFAULT_REQUEST_TIMEOUT_TICKS);
     }
     
-    /**
-     * Starts the replica, allowing it to process messages.
-     */
-    public void start() {
-        running = true;
-        logger.info("Started replica {}", replicaId);
+    public Replica(String replicaId, MessageBus messageBus) {
+        this(replicaId, messageBus, "localhost", 8000 + Integer.parseInt(replicaId.split("-")[1]), 
+             List.of(new ReplicaEndpoint(replicaId, "localhost", 8000 + Integer.parseInt(replicaId.split("-")[1]))));
     }
     
-    /**
-     * Stops the replica, preventing it from processing messages.
-     */
-    public void stop() {
-        running = false;
-        logger.info("Stopped replica {}", replicaId);
-    }
-    
-    /**
-     * Connects this replica to another replica.
-     *
-     * @param targetReplicaId The ID of the replica to connect to
-     * @param host The host address of the target replica
-     * @param port The port number of the target replica
-     */
-    public void connectTo(String targetReplicaId, String host, int port) {
-        messageBus.connect(targetReplicaId, host, port);
-        logger.info("Replica {} connected to replica {}", replicaId, targetReplicaId);
-    }
-    
-    /**
-     * Disconnects this replica from another replica.
-     *
-     * @param targetReplicaId The ID of the replica to disconnect from
-     */
-    public void disconnectFrom(String targetReplicaId) {
-        messageBus.disconnect(targetReplicaId);
-        logger.info("Replica {} disconnected from replica {}", replicaId, targetReplicaId);
-    }
-    
-    /**
-     * Gets the ID of this replica.
-     *
-     * @return The replica ID
-     */
     public String getReplicaId() {
         return replicaId;
     }
     
-    /**
-     * Gets the underlying key-value store.
-     *
-     * @return The key-value store
-     */
-    public KeyValueStore getStore() {
-        return store;
+    public String getIpAddress() {
+        return ipAddress;
     }
     
-    /**
-     * Gets statistics about the replica's operations.
-     *
-     * @return A map of statistic names to values
-     */
-    public Map<String, Long> getStats() {
-        Map<String, Long> stats = new HashMap<>();
-        stats.put("totalRequests", totalRequests.get());
-        stats.put("successfulRequests", successfulRequests.get());
-        stats.put("failedRequests", failedRequests.get());
+    public int getPort() {
+        return port;
+    }
+    
+    public long getCurrentTick() {
+        return currentTick;
+    }
+    
+    public long getRequestTimeoutTicks() {
+        return requestTimeoutTicks;
+    }
+    
+    public void setValue(String key, String value) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key cannot be null");
+        }
+        storage.put(key, value);
+        System.out.println("Replica " + replicaId + " set value " + key + "=" + value);
+    }
+    
+    public void tick() {
+        // Increment tick counter
+        currentTick++;
         
-        // Add message type counts
-        for (Map.Entry<MessageType, AtomicLong> entry : messageTypeCounts.entrySet()) {
-            stats.put("messages." + entry.getKey().name(), entry.getValue().get());
+        // Process all incoming messages
+        List<Object> messages = messageBus.receiveMessages(replicaId);
+        
+        if (!messages.isEmpty()) {
+            System.out.println("Replica " + replicaId + " received " + messages.size() + " messages at tick " + currentTick);
         }
         
-        return stats;
-    }
-    
-    /**
-     * Checks if the replica is currently running.
-     *
-     * @return true if the replica is running, false otherwise
-     */
-    public boolean isRunning() {
-        return running;
-    }
-    
-    /**
-     * Registers message handlers for different message types.
-     */
-    private void registerMessageHandlers() {
-        messageBus.registerHandler(new MessageHandler() {
-            @Override
-            public MessageType getHandledType() {
-                return MessageType.GET_REQUEST;
-            }
-
-            @Override
-            public void handleMessage(Message message) {
-                messageTypeCounts.get(MessageType.GET_REQUEST).incrementAndGet();
-                if (!running) {
-                    logger.warn("Ignoring {} message, replica {} is not running", message.getType(), replicaId);
-                    return;
-                }
-                if (message instanceof GetRequest getRequest) {
-                    handleGetRequest(getRequest);
-                }
-            }
-        });
-
-        messageBus.registerHandler(new MessageHandler() {
-            @Override
-            public MessageType getHandledType() {
-                return MessageType.SET_REQUEST;
-            }
-
-            @Override
-            public void handleMessage(Message message) {
-                messageTypeCounts.get(MessageType.SET_REQUEST).incrementAndGet();
-                if (!running) {
-                    logger.warn("Ignoring {} message, replica {} is not running", message.getType(), replicaId);
-                    return;
-                }
-                if (message instanceof SetRequest setRequest) {
-                    handleSetRequest(setRequest);
-                }
-            }
-        });
-    }
-
-    private void handleGetRequest(GetRequest request) {
-        if (!running) {
-            logger.warn("Ignoring GET_REQUEST message, replica {} is not running", replicaId);
-            return;
+        for (Object message : messages) {
+            processMessage(message);
         }
         
-        totalRequests.incrementAndGet();
-        
-        logger.debug("Replica {} handling GET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
-        
-        // Process the GET request with consistency handling
-        String key = request.getKey();
-        TimestampedValue value = store.getWithTimestamp(key);
-        
-        GetResponse response;
-        if (value != null) {
-            // Success - key found
-            response = new GetResponse(
-                request.getMessageId(),
-                System.currentTimeMillis(),
-                replicaId,
-                request.getSourceId(),
-                key,
-                value.getValue(),
-                true,
-                null,
-                value.getTimestamp()
-            );
-            successfulRequests.incrementAndGet();
-            metrics.recordSuccessfulRequest();
+        // Check for timeouts
+        checkTimeouts();
+    }
+    
+    private void processMessage(Object message) {
+        if (message instanceof GetRequest) {
+            System.out.println("Replica " + replicaId + " processing GetRequest: " + 
+                             ((GetRequest) message).getKey());
+            processGetRequest((GetRequest) message);
+        } else if (message instanceof PutRequest) {
+            PutRequest putRequest = (PutRequest) message;
+            System.out.println("Replica " + replicaId + " processing PutRequest: " + 
+                             putRequest.getKey() + "=" + putRequest.getValue());
+            processPutRequest(putRequest);
+        } else if (message instanceof ReplicaRequest) {
+            System.out.println("Replica " + replicaId + " processing ReplicaRequest: " + 
+                             ((ReplicaRequest) message).getKey());
+            processReplicaRequest((ReplicaRequest) message);
+        } else if (message instanceof ReplicaResponse) {
+            System.out.println("Replica " + replicaId + " processing ReplicaResponse for request: " + 
+                             ((ReplicaResponse) message).getRequestId());
+            processReplicaResponse((ReplicaResponse) message);
         } else {
-            // Failure - key not found
-            response = new GetResponse(
-                request.getMessageId(),
-                System.currentTimeMillis(),
-                replicaId,
-                request.getSourceId(),
-                key,
-                null,
-                false,
-                "Key not found",
-                0
-            );
-            failedRequests.incrementAndGet();
-            metrics.recordFailedRequest();
+            System.out.println("Replica " + replicaId + " received unknown message type: " + 
+                             message.getClass().getName());
         }
-        
-        // Send the response
-        messageBus.sendMessage(response);
-        
-        logger.debug("Replica {} sending GET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
     }
-
-    private void handleSetRequest(SetRequest request) {
-        if (!running) {
-            logger.warn("Ignoring SET_REQUEST message, replica {} is not running", replicaId);
-            return;
-        }
+    
+    private void processGetRequest(GetRequest request) {
+        // Common handling for client requests
+        String clientMessageId = request.getMessageId();
+        processClientRequest(
+            request.getClientId(),
+            clientMessageId,
+            request.getKey(),
+            null, // No value for GET requests
+            OperationType.GET
+        );
+    }
+    
+    private void processPutRequest(PutRequest request) {
+        // Common handling for client requests
+        String clientMessageId = request.getMessageId();
+        processClientRequest(
+            request.getClientId(),
+            clientMessageId,
+            request.getKey(),
+            request.getValue(),
+            OperationType.PUT
+        );
+    }
+    
+    private void processClientRequest(String clientId, String clientMessageId, String key, 
+                                     String value, OperationType operationType) {
+        // Generate a unique ID for this consensus operation
+        String requestId = UUID.randomUUID().toString();
+        System.out.println("Replica " + replicaId + " generated requestId " + requestId + 
+                          " for client " + operationType + " request " + clientMessageId + 
+                          " at tick " + currentTick);
         
-        totalRequests.incrementAndGet();
+        // Create a new quorum tracker
+        QuorumTracker tracker = new QuorumTracker(requestId, clientId, clientMessageId, key, quorumSize, 
+                                                 operationType, currentTick, requestTimeoutTicks);
+        pendingQuorum.put(requestId, tracker);
         
-        logger.debug("Replica {} handling SET request with message ID {} for key {}", replicaId, request.getMessageId(), request.getKey());
-        
-        // Process the SET request with consistency handling
-        String key = request.getKey();
-        String value = request.getValue();
-        long timestamp = request.getValueTimestamp();
-        
-        // Check for timestamp conflict before setting
-        TimestampedValue existingValue = store.getWithTimestamp(key);
-        String errorMessage = null;
+        // Process the request locally
         boolean success;
-        
-        if (existingValue != null && existingValue.getTimestamp() > timestamp) {
-            success = false;
-            errorMessage = String.format("Timestamp conflict: existing value has timestamp %d which is newer than request timestamp %d",
-                existingValue.getTimestamp(), timestamp);
+        if (operationType == OperationType.GET) {
+            // Lookup the value
+            String storedValue = storage.get(key);
+            success = storedValue != null;
+            value = storedValue != null ? storedValue : "";
+            
+            System.out.println("Replica " + replicaId + " local lookup for key " + key + 
+                             ": found=" + success + 
+                             ", value=" + (storedValue != null ? "'" + storedValue + "'" : "null"));
         } else {
-            success = store.set(key, value, timestamp);
-            if (!success) {
-                errorMessage = "Failed to set value";
-            }
+            // Store the value locally
+            storage.put(key, value);
+            success = true;
+            System.out.println("Replica " + replicaId + " stored key=" + key + 
+                             " with value='" + value + "' locally");
         }
         
-        SetResponse response = new SetResponse(
-            request.getMessageId(),
-            System.currentTimeMillis(),
-            replicaId,
-            request.getSourceId(),
-            key,
-            success,
-            errorMessage,
-            timestamp
+        // Create and track our own response
+        ReplicaResponse localResponse = new ReplicaResponse(
+            requestId, replicaId, success, key, value != null ? value : ""
+        );
+        tracker.addResponse(localResponse);
+        System.out.println("Replica " + replicaId + " added own response to tracker");
+        
+        // Forward to all peers
+        forwardRequestToPeers(requestId, clientId, key, value, operationType);
+        
+        // Check if we already have quorum (e.g., single-node case)
+        checkForQuorumAndRespond(requestId);
+    }
+    
+    private void forwardRequestToPeers(String requestId, String clientId, String key, 
+                                      String value, OperationType operationType) {
+        int forwardCount = 0;
+        for (Map.Entry<String, ReplicaEndpoint> entry : peers.entrySet()) {
+            String peerId = entry.getKey();
+            if (!peerId.equals(replicaId)) {
+                ReplicaRequest replicaRequest = new ReplicaRequest(
+                    requestId, 
+                    replicaId, 
+                    clientId, 
+                    key, 
+                    operationType.toString(), 
+                    value != null ? value : ""
+                );
+                messageBus.send(peerId, replicaId, replicaRequest);
+                forwardCount++;
+                System.out.println("Replica " + replicaId + " forwarded " + operationType + 
+                                 " request to peer " + peerId);
+            }
+        }
+        System.out.println("Replica " + replicaId + " forwarded " + operationType + 
+                         " request to " + forwardCount + " peers");
+    }
+    
+    private void processReplicaRequest(ReplicaRequest request) {
+        // Process the forwarded request and send response back to originator
+        String key = request.getKey();
+        boolean success = false;
+        String value = "";
+        String operation = request.getOperation();
+        
+        if (OperationType.GET.toString().equals(operation)) {
+            // Handle GET operation
+            value = storage.get(key);
+            success = value != null;
+            value = (value != null) ? value : "";
+            
+            System.out.println("Replica " + replicaId + " processing GET replica request for key " + key + 
+                            " from " + request.getOriginReplicaId() + 
+                            ": found=" + success + 
+                            ", value=" + (value.isEmpty() ? "null" : "'" + value + "'"));
+        } 
+        else if (OperationType.PUT.toString().equals(operation)) {
+            // Handle PUT operation
+            storage.put(key, request.getValue());
+            success = true;
+            value = request.getValue();
+            
+            System.out.println("Replica " + replicaId + " processing PUT replica request for key " + key + 
+                            " from " + request.getOriginReplicaId() + 
+                            ": value='" + value + "'");
+        }
+        
+        // Send response back to the originating replica
+        sendReplicaResponse(request, success, value);
+    }
+    
+    private void sendReplicaResponse(ReplicaRequest request, boolean success, String value) {
+        ReplicaResponse response = new ReplicaResponse(
+            request.getRequestId(), replicaId, success, request.getKey(), value
         );
         
-        if (success) {
-            successfulRequests.incrementAndGet();
-            metrics.recordSuccessfulRequest();
+        messageBus.send(request.getOriginReplicaId(), replicaId, response);
+        System.out.println("Replica " + replicaId + " sent response back to " + request.getOriginReplicaId());
+    }
+    
+    private void processReplicaResponse(ReplicaResponse response) {
+        QuorumTracker tracker = pendingQuorum.get(response.getRequestId());
+        if (tracker != null) {
+            System.out.println("Replica " + replicaId + " received response from " + 
+                               response.getResponderReplicaId() + 
+                               " for request " + response.getRequestId() + 
+                               ": success=" + response.isSuccess() + 
+                               ", value=" + response.getValue());
+            
+            tracker.addResponse(response);
+            System.out.println("Replica " + replicaId + " now has " + 
+                               (tracker.hasQuorum() ? "reached" : "not reached") + 
+                               " quorum (required: " + quorumSize + ")");
+            
+            checkForQuorumAndRespond(response.getRequestId());
         } else {
-            failedRequests.incrementAndGet();
-            metrics.recordFailedRequest();
+            System.out.println("Replica " + replicaId + " received response for unknown request: " + 
+                              response.getRequestId());
+        }
+    }
+    
+    private void checkForQuorumAndRespond(String requestId) {
+        QuorumTracker tracker = pendingQuorum.get(requestId);
+        if (tracker != null && tracker.hasQuorum()) {
+            System.out.println("Replica " + replicaId + " has quorum for request " + requestId + 
+                              ", sending response to client " + tracker.getClientId() + 
+                              " at tick " + currentTick);
+            
+            // Determine the correct response type based on the operation in the tracker
+            OperationType operationType = tracker.getOperationType();
+            
+            if (operationType == OperationType.PUT) {
+                sendPutResponse(tracker);
+            } else {
+                sendGetResponse(tracker);
+            }
+            
+            // Mark as completed and remove from pending
+            tracker.markCompleted();
+            pendingQuorum.remove(requestId);
+            System.out.println("Replica " + replicaId + " marked request " + requestId + " as completed");
+        } else if (tracker != null) {
+            System.out.println("Replica " + replicaId + " does not yet have quorum for request " + requestId);
+        }
+    }
+    
+    private void sendPutResponse(QuorumTracker tracker) {
+        PutResponse clientResponse = new PutResponse(
+            tracker.getClientMessageId(),
+            tracker.getKey(),
+            true,
+            replicaId
+        );
+        messageBus.send(tracker.getClientId(), replicaId, clientResponse);
+        System.out.println("Replica " + replicaId + " sent PutResponse to client: " + 
+                        "messageId=" + clientResponse.getMessageId() + 
+                        ", key=" + clientResponse.getKey() + 
+                        ", success=" + clientResponse.isSuccess());
+    }
+    
+    private void sendGetResponse(QuorumTracker tracker) {
+        GetResponse clientResponse = tracker.createClientResponse(replicaId);
+        messageBus.send(tracker.getClientId(), replicaId, clientResponse);
+        System.out.println("Replica " + replicaId + " sent GetResponse to client: " + 
+                        "messageId=" + clientResponse.getMessageId() + 
+                        ", key=" + clientResponse.getKey() + 
+                        ", value=" + clientResponse.getValue() + 
+                        ", success=" + clientResponse.isSuccess());
+    }
+    
+    private void checkTimeouts() {
+        List<String> completedRequests = new ArrayList<>();
+        
+        for (Map.Entry<String, QuorumTracker> entry : pendingQuorum.entrySet()) {
+            String requestId = entry.getKey();
+            QuorumTracker tracker = entry.getValue();
+            
+            if (tracker.hasTimedOut(currentTick)) {
+                Timeout timeout = tracker.getTimeout();
+                System.out.println("Replica " + replicaId + " detected timeout for request " + requestId + 
+                                 " at tick " + currentTick + " (started at tick " + timeout.getStartTick() + 
+                                 ", timeout after " + timeout.getTimeoutTicks() + " ticks)");
+                
+                handleTimeoutForTracker(requestId, tracker);
+                completedRequests.add(requestId);
+            }
         }
         
-        // Send the response
-        messageBus.sendMessage(response);
+        // Remove completed requests
+        for (String requestId : completedRequests) {
+            pendingQuorum.remove(requestId);
+            System.out.println("Replica " + replicaId + " removed timed-out request " + requestId);
+        }
+    }
+    
+    private void handleTimeoutForTracker(String requestId, QuorumTracker tracker) {
+        // Determine the correct response type based on the operation in the tracker
+        OperationType operationType = tracker.getOperationType();
         
-        logger.debug("Replica {} sending SET response with message ID {} for key {}", replicaId, response.getMessageId(), response.getKey());
+        if (operationType == OperationType.PUT) {
+            sendPutTimeoutResponse(tracker);
+        } else {
+            sendGetTimeoutResponse(tracker);
+        }
+        
+        tracker.markCompleted();
+    }
+    
+    private void sendPutTimeoutResponse(QuorumTracker tracker) {
+        PutResponse failureResponse = new PutResponse(
+            tracker.getClientMessageId(),
+            tracker.getKey(),
+            false,
+            replicaId
+        );
+        messageBus.send(tracker.getClientId(), replicaId, failureResponse);
+        System.out.println("Replica " + replicaId + " sent timeout PutResponse to client: " + 
+                         "messageId=" + failureResponse.getMessageId() + 
+                         ", key=" + failureResponse.getKey() + 
+                         ", success=false");
+    }
+    
+    private void sendGetTimeoutResponse(QuorumTracker tracker) {
+        GetResponse failureResponse = new GetResponse(
+            tracker.getClientMessageId(),
+            tracker.getKey(),
+            "",
+            false,
+            replicaId
+        );
+        messageBus.send(tracker.getClientId(), replicaId, failureResponse);
+        System.out.println("Replica " + replicaId + " sent timeout GetResponse to client: " + 
+                         "messageId=" + failureResponse.getMessageId() + 
+                         ", key=" + failureResponse.getKey() + 
+                         ", value='', success=false");
     }
 } 

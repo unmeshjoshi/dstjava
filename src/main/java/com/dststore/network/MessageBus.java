@@ -1,276 +1,258 @@
 package com.dststore.network;
 
-import com.dststore.message.Message;
-import com.dststore.message.MessageType;
-import com.dststore.simulation.SimulatedClock;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * The MessageBus handles serialization, deserialization, and routing of messages between nodes
- * in the distributed system. It uses the PacketSimulator for network communication,
- * providing a higher-level messaging abstraction.
+ * The MessageBus provides messaging capabilities between nodes in the distributed system.
+ * It handles message serialization, routing, and delivery.
  */
-public class MessageBus implements IMessageBus {
-    private static final Logger logger = LoggerFactory.getLogger(MessageBus.class);
+public class MessageBus {
     
-    private final String nodeId;
-    private final PacketSimulator packetSimulator;
+    private static final int DEFAULT_MAX_QUEUE_SIZE = 1000;
+    
+    public static class MessageSerializationException extends RuntimeException {
+        public MessageSerializationException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+    
+    public static class MessageDeserializationException extends RuntimeException {
+        public MessageDeserializationException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+    
+    public static class UnregisteredNodeException extends RuntimeException {
+        public UnregisteredNodeException(String message) {
+            super(message);
+        }
+    }
+    
+    private static class InternalMessage {
+        final String senderId;
+        final String targetId;
+        final byte[] payload; // Serialized message data
+        final String messageType; // Type information for deserialization
+        final long messageId; // Unique message identifier
+        
+        InternalMessage(String senderId, String targetId, byte[] payload, String messageType, long messageId) {
+            this.senderId = senderId;
+            this.targetId = targetId;
+            this.payload = payload;
+            this.messageType = messageType;
+            this.messageId = messageId;
+        }
+    }
+    
+    private final Map<String, Queue<InternalMessage>> incomingMessages = new ConcurrentHashMap<>();
+    private final Queue<InternalMessage> pendingMessages = new ConcurrentLinkedQueue<>();
     private final ObjectMapper objectMapper;
-    private final Map<String, Boolean> connections = new HashMap<>();
-    private final Map<MessageType, List<MessageHandler>> handlers = new HashMap<>();
-    private final List<Message> messageQueue = new ArrayList<>();
-    private final List<PacketListener> listeners = new ArrayList<>();
+    private final AtomicLong messageIdGenerator = new AtomicLong(0);
+    private final int maxQueueSize;
     
-    // Track connected nodes for easier status reporting
-    private final Map<String, Boolean> connectedNodes;
+    public MessageBus() {
+        this(DEFAULT_MAX_QUEUE_SIZE);
+    }
     
-    /**
-     * Creates a new MessageBus for the specified node.
-     *
-     * @param nodeId The ID of the node this MessageBus belongs to
-     * @param packetSimulator The packet simulator to use for network communication
-     */
-    public MessageBus(String nodeId, PacketSimulator packetSimulator) {
-        this.nodeId = nodeId;
-        this.packetSimulator = packetSimulator;
+    public MessageBus(int maxQueueSize) {
+        // Configure ObjectMapper with type validation for security
+        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+            .allowIfBaseType(Object.class)
+            .allowIfSubType("com.dststore.message")
+            .build();
+            
         this.objectMapper = new ObjectMapper();
-        this.connectedNodes = new ConcurrentHashMap<>();
-        
-        // Register this node to receive packets
-        if (packetSimulator != null) {
-            packetSimulator.registerListener(nodeId, this::handlePacket);
-        }
-        
-        logger.info("Created MessageBus for node {}", nodeId);
-    }
-
-    @Override
-    public void start() {
-        // Nothing to do for simulated message bus
-    }
-
-    @Override
-    public void stop() {
-        // Nothing to do for simulated message bus
+        this.objectMapper.activateDefaultTyping(ptv);
+        this.maxQueueSize = maxQueueSize;
     }
     
-    /**
-     * Advances the message bus by one time unit, processing any queued messages.
-     * This should be called by the main simulation loop to ensure deterministic execution.
-     */
+    public void registerNode(String nodeId) {
+        if (nodeId == null || nodeId.isEmpty()) {
+            throw new IllegalArgumentException("Node ID cannot be null or empty");
+        }
+        incomingMessages.put(nodeId, new ConcurrentLinkedQueue<>());
+    }
+    
+    public <T> void send(String targetNodeId, String senderId, T message) {
+        validateTargetAndSender(targetNodeId, senderId);
+        
+        try {
+            byte[] serialized = objectMapper.writeValueAsBytes(message);
+            long messageId = messageIdGenerator.incrementAndGet();
+            pendingMessages.add(new InternalMessage(
+                senderId, 
+                targetNodeId, 
+                serialized, 
+                message.getClass().getName(), 
+                messageId
+            ));
+        } catch (JsonProcessingException e) {
+            throw new MessageSerializationException(
+                "Failed to serialize message of type " + message.getClass().getName() + 
+                " from " + senderId + " to " + targetNodeId, 
+                e
+            );
+        }
+    }
+    
+    public long sendRaw(String targetNodeId, String senderId, byte[] payload, String messageType) {
+        validateTargetAndSender(targetNodeId, senderId);
+        
+        if (payload == null) {
+            throw new IllegalArgumentException("Payload cannot be null");
+        }
+        if (messageType == null || messageType.isEmpty()) {
+            throw new IllegalArgumentException("Message type cannot be null or empty");
+        }
+        
+        long messageId = messageIdGenerator.incrementAndGet();
+        pendingMessages.add(new InternalMessage(senderId, targetNodeId, payload, messageType, messageId));
+        return messageId;
+    }
+    
+    private void validateTargetAndSender(String targetNodeId, String senderId) {
+        if (targetNodeId == null || targetNodeId.isEmpty()) {
+            throw new IllegalArgumentException("Target node ID cannot be null or empty");
+        }
+        if (senderId == null || senderId.isEmpty()) {
+            throw new IllegalArgumentException("Sender node ID cannot be null or empty");
+        }
+        if (!incomingMessages.containsKey(targetNodeId)) {
+            throw new UnregisteredNodeException("Target node " + targetNodeId + " is not registered");
+        }
+    }
+    
     public void tick() {
-        // Process all queued messages
-        List<Message> messages = new ArrayList<>(messageQueue);
-        messageQueue.clear();
+        // Process all pending messages and route them to target nodes
+        InternalMessage message;
         
-        for (Message message : messages) {
-            // Ensure the source ID is set correctly
-            if (message.getSourceId() == null || !message.getSourceId().equals(nodeId)) {
-                message = message.withSourceId(nodeId);
-            }
-            
-            // Send the message through the packet simulator
-            sendMessageInternal(message);
-        }
-    }
-    
-    @Override
-    public void connect(String targetNodeId, String host, int port) {
-        connect(targetNodeId);
-    }
-
-    /**
-     * Connects this node to another node, enabling message exchange.
-     *
-     * @param targetNodeId The ID of the node to connect to
-     */
-    public void connect(String targetNodeId) {
-        connectedNodes.put(targetNodeId, true);
-        logger.info("Node {} connected to node {}", nodeId, targetNodeId);
-    }
-    
-    @Override
-    public void disconnect(String targetNodeId) {
-        connectedNodes.remove(targetNodeId);
-        logger.info("Node {} disconnected from node {}", nodeId, targetNodeId);
-    }
-    
-    /**
-     * Queues a message to be sent on the next tick.
-     * This is the preferred method for sending messages in a deterministic manner.
-     *
-     * @param message The message to queue
-     */
-    public void queueMessage(Message message) {
-        // Set the source ID if not already set
-        if (message.getSourceId() == null || !message.getSourceId().equals(nodeId)) {
-            logger.warn("Message source ID is not this node ({} vs {}), correcting", 
-                       message.getSourceId(), nodeId);
-            message = message.withSourceId(nodeId);
-        }
-        
-        messageQueue.add(message);
-        logger.debug("Message ID {} queued for delivery from {} to {}", message.getMessageId(), message.getSourceId(), message.getTargetId());
-    }
-    
-    @Override
-    public void sendMessage(Message message) {
-        // Ensure the source ID is set correctly
-        if (message.getSourceId() == null || !message.getSourceId().equals(nodeId)) {
-            message = message.withSourceId(nodeId);
-        }
-        
-        // Check if we're connected to the target node
-        if (message.getTargetId() == null) {
-            logger.error("Cannot send message with null target ID: {}", message);
-            return;
-        }
-        
-        if (!isConnected(message.getTargetId())) {
-            logger.warn("Attempting to send message to disconnected node: {}", message.getTargetId());
-            return;
-        }
-        
-        // Send the message immediately
-        sendMessageInternal(message);
-    }
-    
-    /**
-     * Internal method to send a message after source ID validation.
-     */
-    private boolean sendMessageInternal(Message message) {
-        String targetNodeId = message.getTargetId();
-        if (targetNodeId == null) {
-            logger.error("Cannot send message with null target ID: {}", message);
-            return false;
-        }
-        
-        if (!connectedNodes.containsKey(targetNodeId)) {
-            logger.warn("Attempting to send message to disconnected node: {}", targetNodeId);
-            return false;
-        }
-        
-        try {
-            byte[] serializedMessage = objectMapper.writeValueAsBytes(message);
-            Path path = new Path(nodeId, targetNodeId);
-            Packet packet = new Packet(path, serializedMessage, packetSimulator.getCurrentTick());
-            
-            boolean enqueued = packetSimulator.enqueuePacket(packet);
-            if (enqueued) {
-                logger.debug("Sent message of type {} from {} to {}", 
-                           message.getType(), nodeId, targetNodeId);
-            } else {
-                logger.warn("Failed to enqueue message of type {} from {} to {}", 
-                          message.getType(), nodeId, targetNodeId);
-            }
-            
-            return enqueued;
-        } catch (IOException e) {
-            logger.error("Failed to serialize message: {}", e.getMessage(), e);
-            return false;
-        }
-    }
-    
-    @Override
-    public void registerHandler(MessageHandler handler) {
-        handlers.computeIfAbsent(handler.getHandledType(), k -> new ArrayList<>()).add(handler);
-    }
-    
-    @Override
-    public void unregisterHandler(MessageType messageType) {
-        handlers.remove(messageType);
-    }
-    
-    @Override
-    public void registerListener(PacketListener listener) {
-        listeners.add(listener);
-    }
-    
-    /**
-     * Handles a received packet by deserializing it and passing it to the appropriate handler.
-     */
-    private void handlePacket(Packet packet, long currentTick) {
-        try {
-            Message message = objectMapper.readValue(packet.getPayload(), Message.class);
-            
-            // First try specific message type handlers
-            List<MessageHandler> messageHandlers = handlers.get(message.getType());
-            if (messageHandlers != null) {
-                for (MessageHandler handler : messageHandlers) {
-                    handler.handleMessage(message);
+        while ((message = pendingMessages.poll()) != null) {
+            Queue<InternalMessage> targetQueue = incomingMessages.get(message.targetId);
+            if (targetQueue != null) {
+                // Check queue size before adding
+                if (targetQueue.size() < maxQueueSize) {
+                    targetQueue.add(message);
+                } else {
+                    // Log that the message was dropped due to queue overflow
+                    System.out.println("WARNING: Message dropped due to queue overflow for node: " + message.targetId);
                 }
             }
-        } catch (IOException e) {
-            logger.error("Failed to deserialize message: {}", e.getMessage(), e);
         }
     }
     
-    @Override
-    public String getNodeId() {
-        return nodeId;
-    }
-    
-    /**
-     * Checks if this node is connected to another node.
-     *
-     * @param targetNodeId The ID of the node to check connection to
-     * @return True if connected, false otherwise
-     */
-    public boolean isConnected(String targetNodeId) {
-        return connectedNodes.containsKey(targetNodeId);
-    }
-    
-    /**
-     * Gets all nodes this node is connected to.
-     *
-     * @return Map of node IDs to connection status
-     */
-    public Map<String, Boolean> getConnectedNodes() {
-        return new HashMap<>(connectedNodes);
-    }
-    
-    /**
-     * Gets the number of messages currently in the queue.
-     *
-     * @return The queue size
-     */
-    public int getQueueSize() {
-        return messageQueue.size();
-    }
-
-    public void send(Message message) {
-        if (message.getTargetId() == null) {
-            throw new IllegalArgumentException("Cannot send message with null target id");
+    public List<Object> receiveMessages(String nodeId) {
+        Queue<InternalMessage> queue = incomingMessages.get(nodeId);
+        if (queue == null) {
+            return List.of();
         }
-        if (!isConnected(message.getTargetId())) {
-            logger.warn("Attempting to send message to disconnected node: {}", message.getTargetId());
-            return;
+        
+        List<Object> messages = new ArrayList<>();
+        InternalMessage message;
+        
+        while ((message = queue.poll()) != null) {
+            try {
+                // Deserialize the message based on its type
+                Class<?> messageClass = Class.forName(message.messageType);
+                Object deserializedMessage = objectMapper.readValue(message.payload, messageClass);
+                messages.add(deserializedMessage);
+            } catch (IOException e) {
+                throw new MessageDeserializationException(
+                    "Failed to deserialize message of type " + message.messageType + 
+                    " from " + message.senderId + " to " + message.targetId,
+                    e
+                );
+            } catch (ClassNotFoundException e) {
+                throw new MessageDeserializationException(
+                    "Unknown message type: " + message.messageType,
+                    e
+                );
+            }
         }
-        Message messageWithSourceId = message.withSourceId(nodeId);
-        sendMessage(messageWithSourceId);
+        
+        return messages;
     }
-
-    public void broadcast(Message message) {
-        connectedNodes.keySet().stream()
-            .filter(targetId -> !targetId.equals(nodeId))
-            .forEach(targetId -> {
-                Message messageToSend = message.withSourceId(nodeId);
-                // Since Message is immutable, we need to create a new instance with the target ID
-                // This is handled by the concrete message classes
-                messageToSend = messageToSend.withTargetId(targetId);
-                sendMessage(messageToSend);
-            });
+    
+    public List<Message> receiveRawMessages(String nodeId) {
+        Queue<InternalMessage> queue = incomingMessages.get(nodeId);
+        if (queue == null) {
+            return List.of();
+        }
+        
+        List<Message> messages = new ArrayList<>();
+        InternalMessage internalMessage;
+        
+        while ((internalMessage = queue.poll()) != null) {
+            messages.add(new Message(
+                internalMessage.messageId,
+                internalMessage.senderId,
+                internalMessage.targetId,
+                internalMessage.payload,
+                internalMessage.messageType
+            ));
+        }
+        
+        return messages;
+    }
+    
+    public static class Message {
+        private final long id;         // Unique message identifier
+        private final String from;     // Sender node ID
+        private final String to;       // Target node ID
+        private final byte[] data;     // Raw message payload
+        private final String type;     // Message type identifier
+        
+        public Message(long id, String from, String to, byte[] data, String type) {
+            this.id = id;
+            this.from = from;
+            this.to = to;
+            this.data = data;
+            this.type = type;
+        }
+        
+        public long getId() {
+            return id;
+        }
+        
+        public String getFrom() {
+            return from;
+        }
+        
+        public String getTo() {
+            return to;
+        }
+        
+        public byte[] getData() {
+            return data;
+        }
+        
+        public String getType() {
+            return type;
+        }
+    }
+    
+    public Map<String, Integer> getMessageStats() {
+        Map<String, Integer> stats = new ConcurrentHashMap<>();
+        
+        for (Queue<InternalMessage> queue : incomingMessages.values()) {
+            for (InternalMessage message : queue) {
+                String type = message.messageType;
+                int size = message.payload.length;
+                stats.put(type, stats.getOrDefault(type, 0) + size);
+            }
+        }
+        
+        return stats;
     }
 } 
