@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 public class Replica {
     private final String replicaId;
@@ -37,6 +38,8 @@ public class Replica {
     private final int port;
     
     private static final long DEFAULT_REQUEST_TIMEOUT_TICKS = 10;
+    
+    private static final Logger LOGGER = Logger.getLogger(Replica.class.getName());
     
     public Replica(String replicaId, MessageBus messageBus, String ipAddress, int port, 
                    List<ReplicaEndpoint> allReplicas, long requestTimeoutTicks) {
@@ -76,9 +79,9 @@ public class Replica {
         
         // Calculate quorum size (majority)
         this.quorumSize = (allReplicas.size() / 2) + 1;
-        System.out.println("Replica " + replicaId + " created with quorum size " + quorumSize + 
-                          " from " + allReplicas.size() + " replicas" +
-                          ", timeout: " + requestTimeoutTicks + " ticks");
+        LOGGER.info("Replica " + replicaId + " created with quorum size " + quorumSize + 
+                    " from " + allReplicas.size() + " replicas" +
+                    ", timeout: " + requestTimeoutTicks + " ticks");
     }
     
     public Replica(String replicaId, MessageBus messageBus, String ipAddress, int port, 
@@ -122,12 +125,13 @@ public class Replica {
     public void tick() {
         // Increment tick counter
         currentTick++;
+        LOGGER.fine("Replica " + replicaId + " tick incremented to " + currentTick);
         
         // Process all incoming messages
         List<Object> messages = messageBus.receiveMessages(replicaId);
         
         if (!messages.isEmpty()) {
-            System.out.println("Replica " + replicaId + " received " + messages.size() + " messages at tick " + currentTick);
+            LOGGER.info("Replica " + replicaId + " received " + messages.size() + " messages at tick " + currentTick);
         }
         
         for (Object message : messages) {
@@ -140,25 +144,25 @@ public class Replica {
     
     private void processMessage(Object message) {
         if (message instanceof GetRequest) {
-            System.out.println("Replica " + replicaId + " processing GetRequest: " + 
-                             ((GetRequest) message).getKey());
+            LOGGER.info("Replica " + replicaId + " processing GetRequest: " + 
+                        ((GetRequest) message).getKey());
             processGetRequest((GetRequest) message);
         } else if (message instanceof PutRequest) {
             PutRequest putRequest = (PutRequest) message;
-            System.out.println("Replica " + replicaId + " processing PutRequest: " + 
-                             putRequest.getKey() + "=" + putRequest.getValue());
+            LOGGER.info("Replica " + replicaId + " processing PutRequest: " + 
+                        putRequest.getKey() + "=" + putRequest.getValue());
             processPutRequest(putRequest);
         } else if (message instanceof ReplicaRequest) {
-            System.out.println("Replica " + replicaId + " processing ReplicaRequest: " + 
-                             ((ReplicaRequest) message).getKey());
+            LOGGER.info("Replica " + replicaId + " processing ReplicaRequest: " + 
+                        ((ReplicaRequest) message).getKey());
             processReplicaRequest((ReplicaRequest) message);
         } else if (message instanceof ReplicaResponse) {
-            System.out.println("Replica " + replicaId + " processing ReplicaResponse for request: " + 
-                             ((ReplicaResponse) message).getRequestId());
+            LOGGER.info("Replica " + replicaId + " processing ReplicaResponse for request: " + 
+                        ((ReplicaResponse) message).getRequestId());
             processReplicaResponse((ReplicaResponse) message);
         } else {
-            System.out.println("Replica " + replicaId + " received unknown message type: " + 
-                             message.getClass().getName());
+            LOGGER.warning("Replica " + replicaId + " received unknown message type: " + 
+                           message.getClass().getName());
         }
     }
     
@@ -301,21 +305,21 @@ public class Replica {
     private void processReplicaResponse(ReplicaResponse response) {
         QuorumTracker tracker = pendingQuorum.get(response.getRequestId());
         if (tracker != null) {
-            System.out.println("Replica " + replicaId + " received response from " + 
-                               response.getResponderReplicaId() + 
-                               " for request " + response.getRequestId() + 
-                               ": success=" + response.isSuccess() + 
-                               ", value=" + response.getValue());
+            LOGGER.info("Replica " + replicaId + " received response from " + 
+                       response.getResponderReplicaId() + 
+                       " for request " + response.getRequestId() + 
+                       ": success=" + response.isSuccess() + 
+                       ", value=" + response.getValue());
             
             tracker.addResponse(response);
-            System.out.println("Replica " + replicaId + " now has " + 
-                               (tracker.hasQuorum() ? "reached" : "not reached") + 
-                               " quorum (required: " + quorumSize + ")");
+            LOGGER.info("Replica " + replicaId + " now has " + 
+                        (tracker.hasQuorum() ? "reached" : "not reached") + 
+                        " quorum (required: " + quorumSize + ")");
             
             checkForQuorumAndRespond(response.getRequestId());
         } else {
-            System.out.println("Replica " + replicaId + " received response for unknown request: " + 
-                              response.getRequestId());
+            LOGGER.warning("Replica " + replicaId + " received response for unknown request: " + 
+                           response.getRequestId());
         }
     }
     
@@ -377,9 +381,9 @@ public class Replica {
             
             if (tracker.hasTimedOut(currentTick)) {
                 Timeout timeout = tracker.getTimeout();
-                System.out.println("Replica " + replicaId + " detected timeout for request " + requestId + 
-                                 " at tick " + currentTick + " (started at tick " + timeout.getStartTick() + 
-                                 ", timeout after " + timeout.getTimeoutTicks() + " ticks)");
+                LOGGER.warning("Replica " + replicaId + " detected timeout for request " + requestId + 
+                             " at tick " + currentTick + " (started at tick " + timeout.getStartTick() + 
+                             ", timeout after " + timeout.getTimeoutTicks() + " ticks)");
                 
                 handleTimeoutForTracker(requestId, tracker);
                 completedRequests.add(requestId);
@@ -389,7 +393,7 @@ public class Replica {
         // Remove completed requests
         for (String requestId : completedRequests) {
             pendingQuorum.remove(requestId);
-            System.out.println("Replica " + replicaId + " removed timed-out request " + requestId);
+            LOGGER.info("Replica " + replicaId + " removed timed-out request " + requestId);
         }
     }
     
