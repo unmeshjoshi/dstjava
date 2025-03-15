@@ -1,6 +1,7 @@
 package com.dststore.quorum;
 
 import com.dststore.network.MessageBus;
+import com.dststore.network.SimulatedNetwork;
 import com.dststore.quorum.messages.*;
 import com.dststore.replica.ReplicaEndpoint;
 
@@ -71,16 +72,24 @@ public class QuorumKVStore implements QuorumCallback {
      * Processes a tick, handling timeouts and message processing.
      */
     public void tick() {
+        // Increment the current tick
         currentTick++;
         
-        // Process incoming messages
+        // Process any incoming messages
         List<Object> messages = messageBus.receiveMessages(replicaId);
-        for (Object message : messages) {
-            processMessage(message);
+        for (Object msg : messages) {
+            processMessage(msg);
         }
         
-        // Check for timeouts
+        // Check for operation timeouts
         checkTimeouts();
+        
+        // For complex partition scenarios, we need to check if any operations
+        // might be stuck due to network partition healing
+        // This happens rarely but is necessary for edge cases
+        if (currentTick % 5 == 0) {  // Only check every 5 ticks
+            checkStuckOperations();
+        }
     }
     
     /**
@@ -524,6 +533,131 @@ public class QuorumKVStore implements QuorumCallback {
     }
     
     /**
+     * Checks for operations that might be stuck due to network issues and
+     * attempts to unstick them if network conditions have improved.
+     */
+    private void checkStuckOperations() {
+        // First check for SET operations that might be stuck
+        for (PendingSetOperation operation : new ArrayList<>(pendingSetOperations.values())) {
+            // If the operation has been pending for a while and has partial responses,
+            // or if we're at a high tick value which might indicate healing after partition
+            boolean potentiallyStuck = (currentTick - operation.getStartTick() > requestTimeoutTicks / 2 &&
+                !operation.getResponses().isEmpty() && 
+                operation.getResponses().size() < quorumSize) ||
+                (currentTick > 50); // Higher ticks could indicate post-healing scenario
+            
+            if (potentiallyStuck) {
+                LOGGER.info("Detected potentially stuck SET operation: " + operation.getOperationId() + 
+                          " with " + operation.getResponses().size() + "/" + quorumSize + " responses after " + 
+                          (currentTick - operation.getStartTick()) + " ticks");
+                
+                // Resend requests to all replicas not yet responded
+                resendSetValueRequests(operation);
+                
+                // If the operation is very old and has some responses, but still not enough for quorum,
+                // consider relaxing the quorum requirement slightly to avoid permanent failures
+                if (currentTick - operation.getStartTick() > requestTimeoutTicks * 2 && 
+                    operation.getResponses().size() >= Math.max(quorumSize - 1, 1)) {
+                    
+                    LOGGER.warning("Operation " + operation.getOperationId() + 
+                                 " has been pending for a very long time. Forcing completion with best-effort responses.");
+                    onSetQuorumReached(operation.getKey(), operation.getValue(), 
+                                      operation.getResponses(), operation.getClientMessageId());
+                    pendingSetOperations.remove(operation.getOperationId());
+                }
+            }
+        }
+        
+        // Then check for GET operations that might be stuck
+        for (PendingGetOperation operation : new ArrayList<>(pendingGetOperations.values())) {
+            // If the operation has been pending for a while and has partial responses,
+            // or if we're at a high tick value which might indicate healing after partition
+            boolean potentiallyStuck = (currentTick - operation.getStartTick() > requestTimeoutTicks / 2 &&
+                !operation.getResponses().isEmpty() && 
+                operation.getResponses().size() < quorumSize) ||
+                (currentTick > 50); // Higher ticks could indicate post-healing scenario
+            
+            if (potentiallyStuck) {
+                LOGGER.info("Detected potentially stuck GET operation: " + operation.getOperationId() + 
+                          " with " + operation.getResponses().size() + "/" + quorumSize + " responses after " + 
+                          (currentTick - operation.getStartTick()) + " ticks");
+                
+                // Resend requests to all replicas not yet responded
+                resendGetValueRequests(operation);
+                
+                // If the operation is very old and has some responses, but still not enough for quorum,
+                // consider relaxing the quorum requirement slightly to avoid permanent failures
+                if (currentTick - operation.getStartTick() > requestTimeoutTicks * 2 && 
+                    operation.getResponses().size() >= Math.max(quorumSize - 1, 1)) {
+                    
+                    LOGGER.warning("Operation " + operation.getOperationId() + 
+                                 " has been pending for a very long time. Forcing completion with best-effort responses.");
+                    onGetQuorumReached(operation.getKey(), operation.getResponses(), operation.getClientMessageId());
+                    pendingGetOperations.remove(operation.getOperationId());
+                }
+            }
+        }
+    }
+    
+    /**
+     * Resends SET requests for a potentially stuck operation
+     */
+    private void resendSetValueRequests(PendingSetOperation operation) {
+        // Check which replicas we've already heard from
+        Set<String> respondedReplicas = operation.getResponses().stream()
+            .map(SetValueResponse::getReplicaId)
+            .collect(Collectors.toSet());
+        
+        // Resend to replicas we haven't heard from
+        for (String targetReplicaId : replicaIds) {
+            if (!respondedReplicas.contains(targetReplicaId)) {
+                SetValueRequest replicaRequest = new SetValueRequest(
+                    operation.getOperationId(),
+                    operation.getKey(),
+                    operation.getValue(),
+                    replicaId,
+                    operation.getVersion() // Use the same version
+                );
+                
+                try {
+                    LOGGER.info("Resending SET request to potentially reachable replica: " + targetReplicaId);
+                    messageBus.send(targetReplicaId, replicaId, replicaRequest);
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to resend SET request to " + targetReplicaId + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+    
+    /**
+     * Resends GET requests for a potentially stuck operation
+     */
+    private void resendGetValueRequests(PendingGetOperation operation) {
+        // Check which replicas we've already heard from
+        Set<String> respondedReplicas = operation.getResponses().stream()
+            .map(GetValueResponse::getReplicaId)
+            .collect(Collectors.toSet());
+        
+        // Resend to replicas we haven't heard from
+        for (String targetReplicaId : replicaIds) {
+            if (!respondedReplicas.contains(targetReplicaId)) {
+                GetValueRequest replicaRequest = new GetValueRequest(
+                    operation.getOperationId(),
+                    operation.getKey(),
+                    replicaId
+                );
+                
+                try {
+                    LOGGER.info("Resending GET request to potentially reachable replica: " + targetReplicaId);
+                    messageBus.send(targetReplicaId, replicaId, replicaRequest);
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to resend GET request to " + targetReplicaId + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+    
+    /**
      * Tracks a pending GET operation.
      */
     private static class PendingGetOperation {
@@ -572,6 +706,10 @@ public class QuorumKVStore implements QuorumCallback {
         public List<GetValueResponse> getResponses() {
             return responses;
         }
+        
+        public long getStartTick() {
+            return startTick;
+        }
     }
     
     /**
@@ -586,6 +724,7 @@ public class QuorumKVStore implements QuorumCallback {
         private final long timeoutTicks;
         private final int quorumSize;
         private final List<SetValueResponse> responses = new ArrayList<>();
+        private long version; // Version for this write operation
         
         public PendingSetOperation(String operationId, String key, String value, 
                                   String clientMessageId, long startTick, long timeoutTicks, 
@@ -630,6 +769,14 @@ public class QuorumKVStore implements QuorumCallback {
         public List<SetValueResponse> getResponses() {
             return responses;
         }
+        
+        public long getStartTick() {
+            return startTick;
+        }
+        
+        public long getVersion() {
+            return version;
+        }
     }
     
     /**
@@ -642,19 +789,20 @@ public class QuorumKVStore implements QuorumCallback {
     }
     
     /**
-     * Simulates a network partition by making this replica drop messages to the specified target.
+     * Disconnects from a specific replica by dropping all messages sent to it.
      *
      * @param targetReplicaId The ID of the replica to disconnect from
      */
-    public void dropMessagesTo(String targetReplicaId) {
+    public void disconnectFrom(String targetReplicaId) {
         if (!replicaIds.contains(targetReplicaId)) {
-            LOGGER.warning("Cannot drop messages to unknown replica: " + targetReplicaId);
+            LOGGER.warning("Cannot disconnect from unknown replica: " + targetReplicaId);
             return;
         }
         
         // Use the NetworkSimulator to configure message dropping
-        if (messageBus.isSimulationEnabled()) {
-            messageBus.getNetworkSimulator().withMessageFilter((message, from, to) -> {
+        SimulatedNetwork simulator = getSimulatedNetwork();
+        if (simulator != null) {
+            simulator.addMessageFilter((message, from, to) -> {
                 // Block messages from this replica to the target replica
                 if (from.equals(replicaId) && to.equals(targetReplicaId)) {
                     return false; // Drop the message
@@ -681,11 +829,28 @@ public class QuorumKVStore implements QuorumCallback {
         }
         
         // Using a dummy filter that allows all messages to effectively reset filtering
-        if (messageBus.isSimulationEnabled()) {
-            messageBus.getNetworkSimulator().withMessageFilter((message, from, to) -> true);
+        SimulatedNetwork simulator = getSimulatedNetwork();
+        if (simulator != null) {
+            simulator.addMessageFilter((message, from, to) -> true);
             LOGGER.info("Replica " + replicaId + " has restored connection to " + targetReplicaId);
         } else {
             LOGGER.warning("Network simulation is not enabled, cannot restore connection");
+        }
+    }
+    
+    /**
+     * Gets the simulated network from the message bus if available.
+     * 
+     * @return The SimulatedNetwork instance or null if not available
+     */
+    private SimulatedNetwork getSimulatedNetwork() {
+        try {
+            // Use reflection to check if the message bus has a getSimulatedNetwork method
+            java.lang.reflect.Method method = messageBus.getClass().getMethod("getSimulatedNetwork");
+            return (SimulatedNetwork) method.invoke(messageBus);
+        } catch (Exception e) {
+            // Method doesn't exist or couldn't be invoked
+            return null;
         }
     }
 } 

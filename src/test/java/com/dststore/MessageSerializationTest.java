@@ -4,7 +4,6 @@ import com.dststore.client.Client;
 import com.dststore.message.GetResponse;
 import com.dststore.network.MessageBus;
 import com.dststore.replica.Replica;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +23,7 @@ public class MessageSerializationTest {
     
     @BeforeEach
     public void setUp() {
-        // Create message bus
+        // Create message bus with network simulation
         messageBus = new MessageBus();
         
         // Create replica and set initial value

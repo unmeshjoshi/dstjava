@@ -1,100 +1,91 @@
-# Deterministic Testing Framework for Distributed Systems
+# Distributed Systems Toolkit (DST)
 
-This project provides a framework for deterministic testing of distributed systems, inspired by TigerBeetle's approach to testing distributed systems. The framework allows for controlled simulation of network conditions, node failures, and message delivery, making it possible to write reproducible tests for distributed systems.
+A toolkit for building and testing distributed systems, featuring configurable network simulation and deterministic testing capabilities.
 
-## Key Components
+## Features
 
-### NetworkSimulator
+- **MessageBus**: Communication backbone for distributed nodes
+- **NetworkSimulator**: Simulates various network conditions with deterministic control
+  - **NEW**: TigerBeetle-style priority queue for message scheduling
+  - Network partitioning
+  - Message loss simulation
+  - Configurable message latency
+  - Bandwidth limitation
+  - Custom message filtering
 
-The `NetworkSimulator` class provides the ability to simulate various network conditions:
+## Network Simulator Enhancements
 
-- **Network Partitions**: Create partitions that completely separate groups of nodes
-- **Message Loss**: Configure a rate at which messages are randomly dropped
-- **Message Delays**: Add latency to message delivery
-- **Bandwidth Limitations**: Restrict the number of messages that can be processed per tick
-- **Custom Message Filtering**: Apply custom logic to filter or modify messages
+The NetworkSimulator has been enhanced with TigerBeetle-style message scheduling, providing more realistic and deterministic simulation of distributed systems. Key improvements include:
 
-### SimulationRunner
+1. **Priority Queue-based Message Scheduling**: Messages are now scheduled based on their delivery tick, allowing for more precise timing control.
+2. **Backward Compatibility**: The simulator maintains compatibility with existing tests while offering new capabilities.
+3. **Deterministic Testing**: Enhanced control over message delivery timing enables more precise tests.
 
-The `SimulationRunner` class orchestrates the simulation:
-
-- **Tick-based Simulation**: Advances the simulation one tick at a time
-- **Replica Management**: Controls the lifecycle of replicas (start/stop)
-- **Network Control**: Creates and heals network partitions
-- **Condition-based Execution**: Runs the simulation until a specific condition is met
-
-## Writing Deterministic Tests
-
-The framework enables writing tests that are:
-
-1. **Deterministic**: Tests produce the same results every time they run
-2. **Controlled**: Network conditions and timing are precisely managed
-3. **Comprehensive**: Tests can cover edge cases that are difficult to reproduce in real environments
-
-Example test cases include:
-
-- Basic replication behavior
-- Network partition scenarios
-- Node failure and recovery
-- Message loss and delays
-- Complex scenarios with multiple failures
-
-## Example Test
-
-Here's a simple example of a test using the framework:
+### Using TigerBeetle-style Scheduling
 
 ```java
-@Test
-public void testNetworkPartition() throws Exception {
-    // Create a network partition
-    int[] partitions = simulation.createNetworkPartition(
-        new String[]{"replica-1", "client-1"}, 
-        new String[]{"replica-2", "replica-3"});
-    
-    // Put a value to replica-1
-    CompletableFuture<PutResponse> putFuture = client.put("key", "value", "replica-1");
-    
-    // Run the simulation for 10 ticks
-    simulation.runFor(10);
-    
-    // Check that the put failed (can't achieve quorum)
-    assertTrue(putFuture.isDone());
-    assertFalse(putFuture.get().isSuccess());
-    
-    // Heal the partition
-    simulation.healNetworkPartition(partitions[0], partitions[1]);
-    
-    // Try the put again
-    putFuture = client.put("key", "value", "replica-1");
-    
-    // Run the simulation for more ticks
-    simulation.runFor(10);
-    
-    // Check that the put succeeded
-    assertTrue(putFuture.isDone());
-    assertTrue(putFuture.get().isSuccess());
+// Create a message bus with network simulation
+MessageBus messageBus = new MessageBus();
+NetworkSimulator simulator = messageBus.enableNetworkSimulation();
+
+// Enable TigerBeetle-style message scheduling
+simulator.enableTigerBeetleStyle();
+
+// Configure network conditions
+simulator.withLatency(2, 5)         // Messages take 2-5 ticks to deliver
+         .withMessageLossRate(0.1)  // 10% message loss
+         .withBandwidthLimit(5);    // Process max 5 messages per tick
+
+// Register message handlers
+messageBus.registerHandler("node1", message -> {
+    System.out.println("Node 1 received: " + message);
+});
+
+// Send messages
+messageBus.send("Hello, Node 1!", "node2", "node1");
+
+// Advance the simulation tick by tick
+for (int i = 0; i < 10; i++) {
+    int messagesDelivered = messageBus.advanceTick();
+    System.out.println("Tick " + i + ": Delivered " + messagesDelivered + " messages");
 }
 ```
 
-## Benefits of Deterministic Testing
+### Network Partitioning Example
 
-1. **Reproducibility**: Tests consistently produce the same results
-2. **Debuggability**: Failures can be analyzed step by step
-3. **Comprehensive Coverage**: Edge cases can be systematically tested
-4. **Fast Execution**: Tests run faster than real-time simulations
-5. **No External Dependencies**: Tests don't require actual network infrastructure
+```java
+// Create partitions
+int partition1 = simulator.createPartition("node1", "node2");
+int partition2 = simulator.createPartition("node3", "node4");
 
-## Getting Started
+// Create a one-way link from partition1 to partition2
+simulator.linkPartitions(partition1, partition2);
 
-To use the framework in your tests:
+// Create a bidirectional link between partitions
+simulator.linkPartitionsBidirectional(partition1, partition2);
+```
 
-1. Create a `MessageBus` instance
-2. Create your replicas and register them with the message bus
-3. Create a `SimulationRunner` with your replicas and message bus
-4. Write tests that use the simulation runner to control the environment
-5. Run your tests and analyze the results
+## Running Examples
 
-For detailed examples, see the `DeterministicReplicationTest` class.
+See `com.dststore.examples.NetworkSimulatorExample` for a complete example of using the NetworkSimulator.
+
+```java
+// Run the basic example
+NetworkSimulatorExample.main(args);
+
+// Run the distributed leader election example
+NetworkSimulatorExample.runLeaderElectionExample();
+```
+
+## Building and Testing
+
+```bash
+# Build the project
+mvn clean package
+
+# Run tests
+mvn test
+```
 
 ## License
 

@@ -7,7 +7,6 @@ import com.dststore.message.PutResponse;
 import com.dststore.network.MessageBus;
 import com.dststore.replica.Replica;
 import com.dststore.replica.ReplicaEndpoint;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +29,7 @@ public class PutTest {
     
     @BeforeEach
     public void setUp() {
-        // Create message bus
+        // Create message bus with network simulation
         messageBus = new MessageBus();
         
         // Create replicas with network information

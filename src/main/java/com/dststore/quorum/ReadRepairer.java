@@ -5,7 +5,6 @@ import com.dststore.quorum.messages.GetValueResponse;
 import com.dststore.quorum.messages.VersionedSetValueRequest;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
