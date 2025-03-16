@@ -69,7 +69,6 @@ public class NetworkSimulationTest {
             for (Replica replica : replicas) {
                 replica.tick();
             }
-            client.tick();
         }
     }
     

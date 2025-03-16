@@ -6,7 +6,6 @@ import com.dststore.message.PutRequest;
 import com.dststore.message.PutResponse;
 import com.dststore.network.MessageBus;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -28,7 +27,7 @@ public class Client {
     public Client(String clientId, MessageBus messageBus) {
         this.clientId = clientId;
         this.messageBus = messageBus;
-        messageBus.registerNode(clientId);
+        messageBus.registerNode(clientId, this::handleMessage, MessageBus.NodeType.CLIENT);
         System.out.println("Client " + clientId + " created and registered with MessageBus");
     }
     
@@ -66,34 +65,23 @@ public class Client {
         return future;
     }
     
-    public void tick() {
-        // Process all incoming messages
-        List<Object> messages = messageBus.receiveMessages(clientId);
-        
-        if (!messages.isEmpty()) {
-            System.out.println("Client " + clientId + " received " + messages.size() + " messages");
+    private void handleMessage(Object message, String from) {
+        if (message instanceof GetResponse) {
+            GetResponse response = (GetResponse) message;
+            System.out.println("Client " + clientId + " processing GetResponse: messageId=" + response.getMessageId() + 
+                              ", key=" + response.getKey() + 
+                              ", value='" + response.getValue() + "'" + 
+                              ", success=" + response.isSuccess());
+            processResponse(response.getMessageId(), response);
+        } else if (message instanceof PutResponse) {
+            PutResponse response = (PutResponse) message;
+            System.out.println("Client " + clientId + " processing PutResponse: messageId=" + response.getMessageId() + 
+                              ", key=" + response.getKey() + 
+                              ", success=" + response.isSuccess());
+            processResponse(response.getMessageId(), response);
+        } else {
+            System.out.println("Client " + clientId + " received unknown message type: " + message.getClass().getName());
         }
-        
-        for (Object message : messages) {
-            if (message instanceof GetResponse) {
-                GetResponse response = (GetResponse) message;
-                System.out.println("Client " + clientId + " processing GetResponse: messageId=" + response.getMessageId() + 
-                                  ", key=" + response.getKey() + 
-                                  ", value='" + response.getValue() + "'" + 
-                                  ", success=" + response.isSuccess());
-                processResponse(response.getMessageId(), response);
-            } else if (message instanceof PutResponse) {
-                PutResponse response = (PutResponse) message;
-                System.out.println("Client " + clientId + " processing PutResponse: messageId=" + response.getMessageId() + 
-                                  ", key=" + response.getKey() + 
-                                  ", success=" + response.isSuccess());
-                processResponse(response.getMessageId(), response);
-            } else {
-                System.out.println("Client " + clientId + " received unknown message type: " + message.getClass().getName());
-            }
-        }
-        
-        // Check for timed-out requests (optional, can be implemented for additional robustness)
         
         // Debug: print pending requests
         if (!pendingRequests.isEmpty()) {

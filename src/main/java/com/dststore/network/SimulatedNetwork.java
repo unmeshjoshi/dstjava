@@ -38,7 +38,6 @@ public class SimulatedNetwork {
     private volatile int minLatencyTicks = DEFAULT_MIN_LATENCY;
     private volatile int maxLatencyTicks = DEFAULT_MAX_LATENCY;
     private volatile int maxMessagesPerTick = DEFAULT_MAX_MESSAGES_PER_TICK;
-    private volatile boolean useTigerBeetleStyleDelay = false;
 
     // Thread safety for message handling
     private final ReentrantReadWriteLock messagesLock = new ReentrantReadWriteLock();

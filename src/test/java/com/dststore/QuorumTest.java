@@ -110,9 +110,6 @@ public class QuorumTest {
                 replica.tick();
             }
             
-            // Process client
-            client.tick();
-            
             if (tickCount % 5 == 0) {
                 System.out.println("Tick " + tickCount + ": Future completed = " + future.isDone());
             }

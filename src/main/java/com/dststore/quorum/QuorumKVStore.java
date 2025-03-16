@@ -54,7 +54,7 @@ public class QuorumKVStore implements QuorumCallback {
         this.readRepairer = new ReadRepairer(messageBus, replicaId);
         
         // Register with the message bus
-        messageBus.registerNode(replicaId);
+        messageBus.registerNode(replicaId, this::processMessage, MessageBus.NodeType.REPLICA);
         
         // Extract replica IDs
         this.replicaIds = allReplicas.stream()
@@ -74,12 +74,8 @@ public class QuorumKVStore implements QuorumCallback {
     public void tick() {
         // Increment the current tick
         currentTick++;
-        
-        // Process any incoming messages
-        List<Object> messages = messageBus.receiveMessages(replicaId);
-        for (Object msg : messages) {
-            processMessage(msg);
-        }
+
+        messageBus.tick();
         
         // Check for operation timeouts
         checkTimeouts();
@@ -96,8 +92,9 @@ public class QuorumKVStore implements QuorumCallback {
      * Processes an incoming message.
      *
      * @param message The message to process
+     * @param from The sender node ID
      */
-    private void processMessage(Object message) {
+    private void processMessage(Object message, String from) {
         if (message instanceof GetValueRequest) {
             GetValueRequest getRequest = (GetValueRequest) message;
             // Check if this is a request from another replica or from a client

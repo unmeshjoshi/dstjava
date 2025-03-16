@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
@@ -37,9 +36,6 @@ public class MessageBus {
     
     // Map to identify node types by their ID
     private final Map<String, NodeType> nodeTypes = new ConcurrentHashMap<>();
-    
-    // Queue of messages for each node (for backward compatibility with receiveMessages)
-    private final Map<String, Queue<Object>> messageQueues = new ConcurrentHashMap<>();
     
     // Lock for tick advancement
     private final ReentrantReadWriteLock tickLock = new ReentrantReadWriteLock();
@@ -158,50 +154,6 @@ public class MessageBus {
     }
     
     /**
-     * Registers a node with the message bus with default type of REPLICA.
-     * 
-     * @param nodeId The ID of the node to register
-     * @param handler The message handler for the node
-     * @throws IllegalArgumentException If nodeId is null or empty, or if handler is null
-     */
-    public void registerNode(String nodeId, MessageHandler handler) {
-        registerNode(nodeId, handler, NodeType.REPLICA);
-    }
-    
-    /**
-     * Registers a node with the message bus without a handler.
-     * This creates a default handler that queues messages for backward compatibility.
-     * 
-     * @param nodeId The ID of the node
-     * @param nodeType The type of the node
-     */
-    public void registerNode(String nodeId, NodeType nodeType) {
-        if (nodeId == null || nodeId.isEmpty()) {
-            throw new IllegalArgumentException("Node ID cannot be null or empty");
-        }
-        
-        // Create a default handler that queues messages for backward compatibility
-        MessageHandler defaultHandler = (message, from) -> {
-            messageQueues.computeIfAbsent(nodeId, k -> new ConcurrentLinkedQueue<>()).add(message);
-            LOGGER.log(Level.FINE, "Message from {0} queued for node {1} (using default handler)",
-                     new Object[]{from, nodeId});
-        };
-        
-        registerNode(nodeId, defaultHandler, nodeType);
-    }
-    
-    /**
-     * Registers a node with the message bus with default handler and type.
-     * This overload is for backward compatibility with code that doesn't use handlers.
-     * 
-     * @param nodeId The ID of the node to register
-     * @throws IllegalArgumentException If nodeId is null or empty
-     */
-    public void registerNode(String nodeId) {
-        registerNode(nodeId, NodeType.REPLICA);
-    }
-    
-    /**
      * Unregisters a node from the message bus.
      * 
      * @param nodeId The ID of the node to unregister
@@ -209,7 +161,6 @@ public class MessageBus {
     public void unregisterNode(String nodeId) {
         messageHandlers.remove(nodeId);
         nodeTypes.remove(nodeId);
-        messageQueues.remove(nodeId);
         LOGGER.log(Level.INFO, "Unregistered node: {0}", nodeId);
     }
     
@@ -383,89 +334,8 @@ public class MessageBus {
                 LOGGER.log(Level.SEVERE, "Error delivering message to handler for node: " + to, e);
             }
         } else {
-            // Otherwise, queue the message for legacy receiveMessages() method
-            messageQueues.computeIfAbsent(to, k -> new ConcurrentLinkedQueue<>()).add(message);
-            LOGGER.log(Level.FINE, "Message queued for node: {0} (no handler registered)", to);
+            LOGGER.log(Level.WARNING, "No handler registered for node: {0}", to);
         }
-    }
-    
-    /**
-     * Legacy method to receive messages for a node.
-     * This is maintained for backward compatibility with existing code.
-     * 
-     * @param nodeId The ID of the node
-     * @return A list of messages for the node
-     */
-    public List<Object> receiveMessages(String nodeId) {
-        LOGGER.log(Level.WARNING, 
-                "receiveMessages() is deprecated - use registerNode() with a message handler instead");
-        
-        Queue<Object> queue = messageQueues.get(nodeId);
-        if (queue == null || queue.isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        List<Object> messages = new ArrayList<>();
-        Object message;
-        while ((message = queue.poll()) != null) {
-            messages.add(message);
-        }
-        
-        return messages;
-    }
-    
-    /**
-     * Resets the message bus state.
-     */
-    public void reset() {
-        tickLock.writeLock().lock();
-        try {
-            currentTick.set(0);
-            simulatedNetwork.reset();
-            messageQueues.clear();
-            LOGGER.log(Level.INFO, "MessageBus reset");
-        } finally {
-            tickLock.writeLock().unlock();
-        }
-    }
-    
-    /**
-     * Gets a set of node IDs for all registered nodes.
-     * 
-     * @return A set of node IDs
-     */
-    public Set<String> getRegisteredNodeIds() {
-        return new HashSet<>(messageHandlers.keySet());
-    }
-    
-    /**
-     * Gets a set of node IDs for all registered replicas.
-     * 
-     * @return A set of replica node IDs
-     */
-    public Set<String> getRegisteredReplicaIds() {
-        Set<String> replicaIds = new HashSet<>();
-        for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {
-            if (entry.getValue() == NodeType.REPLICA) {
-                replicaIds.add(entry.getKey());
-            }
-        }
-        return replicaIds;
-    }
-    
-    /**
-     * Gets a set of node IDs for all registered clients.
-     * 
-     * @return A set of client node IDs
-     */
-    public Set<String> getRegisteredClientIds() {
-        Set<String> clientIds = new HashSet<>();
-        for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {
-            if (entry.getValue() == NodeType.CLIENT) {
-                clientIds.add(entry.getKey());
-            }
-        }
-        return clientIds;
     }
     
     /**
@@ -572,5 +442,58 @@ public class MessageBus {
         }
         
         return result;
+    }
+    
+    /**
+     * Resets the message bus state.
+     */
+    public void reset() {
+        tickLock.writeLock().lock();
+        try {
+            currentTick.set(0);
+            simulatedNetwork.reset();
+            LOGGER.log(Level.INFO, "MessageBus reset");
+        } finally {
+            tickLock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Gets a set of node IDs for all registered nodes.
+     * 
+     * @return A set of node IDs
+     */
+    public Set<String> getRegisteredNodeIds() {
+        return new HashSet<>(messageHandlers.keySet());
+    }
+    
+    /**
+     * Gets a set of node IDs for all registered replicas.
+     * 
+     * @return A set of replica node IDs
+     */
+    public Set<String> getRegisteredReplicaIds() {
+        Set<String> replicaIds = new HashSet<>();
+        for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {
+            if (entry.getValue() == NodeType.REPLICA) {
+                replicaIds.add(entry.getKey());
+            }
+        }
+        return replicaIds;
+    }
+    
+    /**
+     * Gets a set of node IDs for all registered clients.
+     * 
+     * @return A set of client node IDs
+     */
+    public Set<String> getRegisteredClientIds() {
+        Set<String> clientIds = new HashSet<>();
+        for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {
+            if (entry.getValue() == NodeType.CLIENT) {
+                clientIds.add(entry.getKey());
+            }
+        }
+        return clientIds;
     }
 } 

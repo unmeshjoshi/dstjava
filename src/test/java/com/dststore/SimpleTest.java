@@ -89,9 +89,6 @@ public class SimpleTest {
             // Process replica
             replica.tick();
             
-            // Process client
-            client.tick();
-            
             tickCount++;
         }
         

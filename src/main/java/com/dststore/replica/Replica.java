@@ -58,7 +58,7 @@ public class Replica {
         this.port = port;
         this.requestTimeoutTicks = requestTimeoutTicks;
         
-        messageBus.registerNode(replicaId);
+        messageBus.registerNode(replicaId, this::processMessage, MessageBus.NodeType.REPLICA);
         
         // Add all replicas to peers map (including self for simplicity)
         this.peers = new HashMap<>();
@@ -116,22 +116,11 @@ public class Replica {
         currentTick++;
         LOGGER.fine("Replica " + replicaId + " tick incremented to " + currentTick);
         
-        // Process all incoming messages
-        List<Object> messages = messageBus.receiveMessages(replicaId);
-        
-        if (!messages.isEmpty()) {
-            LOGGER.info("Replica " + replicaId + " received " + messages.size() + " messages at tick " + currentTick);
-        }
-        
-        for (Object message : messages) {
-            processMessage(message);
-        }
-        
         // Check for timeouts
         checkTimeouts();
     }
     
-    private void processMessage(Object message) {
+    private void processMessage(Object message, String from) {
         if (message instanceof GetRequest) {
             LOGGER.info("Replica " + replicaId + " processing GetRequest: " + 
                         ((GetRequest) message).getKey());

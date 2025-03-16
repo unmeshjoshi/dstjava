@@ -56,9 +56,6 @@ public class MessageSerializationTest {
         stats = messageBus.getMessageStats();
         assertTrue(stats.containsKey("com.dststore.message.GetResponse"));
         
-        // Process the response on the client
-        client.tick();
-        
         // Verify the response was correctly deserialized and processed
         GetResponse response = future.get(1, TimeUnit.SECONDS);
         assertNotNull(response);

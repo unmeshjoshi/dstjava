@@ -133,12 +133,6 @@ public class SimulationRunner {
             }
         }
         
-        // Process the client to handle responses and complete futures
-        if (client != null) {
-            client.tick();
-            LOGGER.log(Level.FINEST, "Processed client " + client.getClientId() + " at tick " + currentTick);
-        }
-        
         return currentTick;
     }
     
@@ -185,20 +179,6 @@ public class SimulationRunner {
         for (int i = 0; i < 5; i++) {  // Increased from 3 to 5 ticks for better reliability
             tick();
             LOGGER.info("Processing post-healing tick #" + (i+1));
-            
-            // Force all nodes to check their message queues after each tick
-            // Use the first message bus in the map since we typically have a single shared message bus
-            if (!messageBuses.isEmpty()) {
-                MessageBus messageBus = messageBuses.values().iterator().next();
-                
-                for (String nodeId : messageBus.getRegisteredNodeIds()) {
-                    List<Object> messages = messageBus.receiveMessages(nodeId);
-                    if (!messages.isEmpty()) {
-                        LOGGER.info("Node " + nodeId + " received " + messages.size() + 
-                                  " messages after healing");
-                    }
-                }
-            }
         }
         
         // Log a summary of current network state

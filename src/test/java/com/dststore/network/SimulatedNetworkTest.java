@@ -41,16 +41,16 @@ public class SimulatedNetworkTest {
         // Register nodes with message handlers
         messageBus.registerNode("node1", (message, from) -> {
             node1Messages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node2", (message, from) -> {
             node2Messages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node3", (message, from) -> {
             node3Messages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node4", (message, from) -> {
             node4Messages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         
         // Send messages within and across partitions
         messageBus.sendMessage("Message 1-2", "node1", "node2"); // Should be delivered (same partition)
@@ -105,10 +105,10 @@ public class SimulatedNetworkTest {
         List<String> receivedMessages = Collections.synchronizedList(new ArrayList<>());
         
         // Register nodes with message handlers
-        messageBus.registerNode("node1", (message, from) -> {});
+        messageBus.registerNode("node1", (message, from) -> {}, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node2", (message, from) -> {
             receivedMessages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         
         // Send 10 messages
         for (int i = 0; i < 10; i++) {
@@ -145,10 +145,10 @@ public class SimulatedNetworkTest {
         List<String> receivedMessages = Collections.synchronizedList(new ArrayList<>());
         
         // Register nodes with message handlers
-        messageBus.registerNode("node1", (message, from) -> {});
+        messageBus.registerNode("node1", (message, from) -> {}, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node2", (message, from) -> {
             receivedMessages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         
         // Send 10 messages
         for (int i = 0; i < 10; i++) {
@@ -185,10 +185,10 @@ public class SimulatedNetworkTest {
         List<String> receivedMessages = Collections.synchronizedList(new ArrayList<>());
         
         // Register nodes with message handlers
-        messageBus.registerNode("node1", (message, from) -> {});
+        messageBus.registerNode("node1", (message, from) -> {}, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("node2", (message, from) -> {
             receivedMessages.add((String) message);
-        });
+        }, MessageBus.NodeType.REPLICA);
         
         // Send 5 normal messages and 5 messages to be blocked
         for (int i = 0; i < 5; i++) {
