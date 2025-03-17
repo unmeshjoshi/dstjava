@@ -22,7 +22,7 @@ public class SimulatedNetworkTest {
         messageBus = new MessageBus();
         
         // Get the SimulatedNetwork from the MessageBus
-        simulatedNetwork = messageBus.getSimulatedNetwork();
+        simulatedNetwork = messageBus.getNetwork();
     }
     
 

@@ -32,7 +32,7 @@ public class SimulationRunner {
         this.messageBuses = new HashMap<>();
         
         // Get the SimulatedNetwork from the MessageBus
-        this.simulatedNetwork = messageBus.getSimulatedNetwork();
+        this.simulatedNetwork = messageBus.getNetwork();
         
         // For deterministic behavior, do NOT enable TigerBeetle-style by default
         // since existing tests expect the legacy behavior

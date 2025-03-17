@@ -36,7 +36,7 @@ public class QuorumKVStoreTest {
     public void setUp() {
         // Create a message bus with network simulation enabled
         messageBus = new MessageBus();
-        simulatedNetwork = messageBus.getSimulatedNetwork();
+        simulatedNetwork = messageBus.getNetwork();
         
         // Create three replicas
         List<ReplicaEndpoint> replicas = Arrays.asList(
@@ -129,7 +129,7 @@ public class QuorumKVStoreTest {
     public void testNetworkPartition() {
         // Create a new message bus and replicas with a simulated network partition
         MessageBus partitionedBus = new MessageBus();
-        var partitionedNetwork = partitionedBus.getSimulatedNetwork();
+        var partitionedNetwork = partitionedBus.getNetwork();
 
         // Create three replicas with the same configuration
         List<ReplicaEndpoint> replicas = Arrays.asList(

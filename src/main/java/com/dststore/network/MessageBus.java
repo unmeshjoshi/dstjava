@@ -1,15 +1,11 @@
 package com.dststore.network;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
 
 /**
  * Message bus for inter-node communication in distributed systems.
@@ -21,9 +17,6 @@ import java.util.logging.Logger;
  */
 public class MessageBus {
     private static final Logger LOGGER = Logger.getLogger(MessageBus.class.getName());
-
-    // Default queue size limits
-    private static final int DEFAULT_MAX_QUEUE_SIZE = 1000;
 
     // The network simulator for controlled testing
     private final SimulatedNetwork simulatedNetwork;
@@ -37,11 +30,8 @@ public class MessageBus {
     // Map to identify node types by their ID
     private final Map<String, NodeType> nodeTypes = new ConcurrentHashMap<>();
 
-    // Lock for tick advancement
-    private final ReentrantReadWriteLock tickLock = new ReentrantReadWriteLock();
-
-    // JSON serializer for messages
-    private final ObjectMapper objectMapper;
+    // Message serializer for serialization and deserialization
+    private final MessageSerializer messageSerializer;
 
     // Message ID generator
     private final AtomicLong messageIdGenerator = new AtomicLong(0);
@@ -58,12 +48,6 @@ public class MessageBus {
      * Interface for node message handlers.
      */
     public interface MessageHandler {
-        /**
-         * Handles a received message.
-         *
-         * @param message The received message
-         * @param from    The sender node ID
-         */
         void handleMessage(Object message, SimulatedNetwork.DeliveryContext from);
     }
 
@@ -72,14 +56,9 @@ public class MessageBus {
      * The SimulatedNetwork is configured with a callback to deliver messages through this MessageBus.
      */
     public MessageBus() {
-        // Configure ObjectMapper with type validation for security
-        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
-                .allowIfBaseType(Object.class)
-                .allowIfSubType("com.dststore.message")
-                .build();
 
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.activateDefaultTyping(ptv);
+        // Initialize message serializer
+        this.messageSerializer = new MessageSerializer();
 
         // Create a network with a callback to our deliverMessage method
         this.simulatedNetwork = new SimulatedNetwork((message, context) -> {
@@ -89,30 +68,17 @@ public class MessageBus {
         LOGGER.log(Level.INFO, "MessageBus initialized with default network simulator");
     }
 
-    /**
-     * Returns the SimulatedNetwork instance used by this MessageBus.
-     *
-     * @return The SimulatedNetwork instance
-     */
-    public SimulatedNetwork getSimulatedNetwork() {
+    public SimulatedNetwork getNetwork() {
         return simulatedNetwork;
     }
 
-    /**
-     * Gets the current tick in the simulation.
-     *
-     * @return The current tick
-     */
+
     public long getCurrentTick() {
         return currentTick.get();
     }
 
     /**
-     * Registers a node with the message bus.
-     *
-     * @param nodeId   The ID of the node
-     * @param handler  The message handler for the node
-     * @param nodeType The type of the node
+     * Registers a node and the message handler with the message bus.
      */
     public void registerNode(String nodeId, MessageHandler handler, NodeType nodeType) {
         if (nodeId == null || nodeId.isEmpty()) {
@@ -147,27 +113,17 @@ public class MessageBus {
      * @return The number of messages delivered during this tick
      */
     public int tick() {
-        tickLock.writeLock().lock();
-        try {
-            long newTick = currentTick.incrementAndGet();
-            LOGGER.log(Level.FINE, "Advanced to tick {0}", newTick);
+        long newTick = currentTick.incrementAndGet();
+        LOGGER.log(Level.FINE, "Advanced to tick {0}", newTick);
 
-            // Advance the network simulator and deliver messages
-            return simulatedNetwork.tick();
-        } finally {
-            tickLock.writeLock().unlock();
-        }
+        // Advance the network simulator and deliver messages
+        return simulatedNetwork.tick();
     }
 
     /**
      * Sends a message to a specific node (generic method).
      * This is kept for backward compatibility.
-     *
-     * @param message The message to send
-     * @param from    The sender node ID
-     * @param to      The recipient node ID
-     * @return true if the message was queued for delivery, false if it was dropped
-     * @throws IllegalArgumentException if any parameter is null, or if from/to are empty
+     
      */
     public boolean sendMessage(Object message, String from, String to) {
         validateTargetAndSender(to, from);
@@ -176,14 +132,22 @@ public class MessageBus {
             throw new IllegalArgumentException("Message cannot be null");
         }
 
-        // Send the message through the network simulator
-        boolean sent = simulatedNetwork.sendMessage(message, from, to);
+        try {
+            // Serialize the message
+            String serializedMessage = messageSerializer.serialize(message);
 
-        // Log the message being sent
-        LOGGER.log(Level.FINE, "Message from {0} to {1} scheduled for delivery: {2}",
-                new Object[]{from, to, sent ? "yes" : "dropped"});
+            // Send the serialized message through the network simulator
+            boolean sent = simulatedNetwork.sendMessage(serializedMessage, from, to);
 
-        return sent;
+            // Log the message being sent
+            LOGGER.log(Level.FINE, "Message from {0} to {1} scheduled for delivery: {2}",
+                    new Object[]{from, to, sent ? "yes" : "dropped"});
+
+            return sent;
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to serialize message from {0} to {1}", new Object[]{from, to});
+            return false;
+        }
     }
 
     /**
@@ -198,9 +162,12 @@ public class MessageBus {
         MessageHandler handler = messageHandlers.get(to);
 
         if (handler != null) {
-            // If there's a registered handler, deliver directly via callback
             try {
-                handler.handleMessage(message, new SimulatedNetwork.DeliveryContext(from, to));
+                // Deserialize the message
+                Object deserializedMessage = messageSerializer.deserialize((String) message);
+
+                // Deliver the deserialized message
+                handler.handleMessage(deserializedMessage, new SimulatedNetwork.DeliveryContext(from, to));
                 LOGGER.log(Level.FINE, "Message delivered to handler for node: {0}", to);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Error delivering message to handler for node: " + to, e);
@@ -226,74 +193,6 @@ public class MessageBus {
         }
     }
 
-    /**
-     * Validates the target replica node ID.
-     *
-     * @param replicaId The target replica node ID
-     * @throws IllegalArgumentException If the ID is null or empty
-     * @throws IllegalStateException    If the node is explicitly registered as non-replica
-     */
-    private void validateTargetReplica(String replicaId) {
-        if (replicaId == null || replicaId.isEmpty()) {
-            throw new IllegalArgumentException("Replica ID cannot be null or empty");
-        }
-
-        NodeType nodeType = nodeTypes.get(replicaId);
-        // If node is not registered yet, assume it's a replica
-        if (nodeType != null && nodeType != NodeType.REPLICA) {
-            throw new IllegalStateException("Target node " + replicaId + " is not a replica");
-        }
-    }
-
-    /**
-     * Validates the target client node ID.
-     *
-     * @param clientId The target client node ID
-     * @throws IllegalArgumentException If the ID is null or empty
-     * @throws IllegalStateException    If the node is explicitly registered as non-client
-     */
-    private void validateTargetClient(String clientId) {
-        if (clientId == null || clientId.isEmpty()) {
-            throw new IllegalArgumentException("Client ID cannot be null or empty");
-        }
-
-        NodeType nodeType = nodeTypes.get(clientId);
-        // If node is not registered yet, assume it's a client
-        if (nodeType != null && nodeType != NodeType.CLIENT) {
-            throw new IllegalStateException("Target node " + clientId + " is not a client");
-        }
-    }
-
-    /**
-     * Validates the sender node ID.
-     *
-     * @param senderId The sender node ID
-     * @throws IllegalArgumentException If the ID is null or empty
-     */
-    private void validateSender(String senderId) {
-        if (senderId == null || senderId.isEmpty()) {
-            throw new IllegalArgumentException("Sender ID cannot be null or empty");
-        }
-    }
-
-    /**
-     * Validates that the sender is a replica.
-     *
-     * @param senderId The sender node ID
-     * @throws IllegalArgumentException If the ID is null or empty
-     * @throws IllegalStateException    If the node is explicitly registered as non-replica
-     */
-    private void validateSenderReplica(String senderId) {
-        if (senderId == null || senderId.isEmpty()) {
-            throw new IllegalArgumentException("Sender ID cannot be null or empty");
-        }
-
-        NodeType nodeType = nodeTypes.get(senderId);
-        // If node is not registered yet, assume it's a replica
-        if (nodeType != null && nodeType != NodeType.REPLICA) {
-            throw new IllegalStateException("Sender node " + senderId + " is not a replica");
-        }
-    }
 
     /**
      * Gets message statistics by type from the SimulatedNetwork.
@@ -320,30 +219,15 @@ public class MessageBus {
      * Resets the message bus state.
      */
     public void reset() {
-        tickLock.writeLock().lock();
-        try {
-            currentTick.set(0);
-            simulatedNetwork.reset();
-            LOGGER.log(Level.INFO, "MessageBus reset");
-        } finally {
-            tickLock.writeLock().unlock();
-        }
+        currentTick.set(0);
+        simulatedNetwork.reset();
+        LOGGER.log(Level.INFO, "MessageBus reset");
     }
 
-    /**
-     * Gets a set of node IDs for all registered nodes.
-     *
-     * @return A set of node IDs
-     */
     public Set<String> getRegisteredNodeIds() {
         return new HashSet<>(messageHandlers.keySet());
     }
 
-    /**
-     * Gets a set of node IDs for all registered replicas.
-     *
-     * @return A set of replica node IDs
-     */
     public Set<String> getRegisteredReplicaIds() {
         Set<String> replicaIds = new HashSet<>();
         for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {
@@ -354,11 +238,6 @@ public class MessageBus {
         return replicaIds;
     }
 
-    /**
-     * Gets a set of node IDs for all registered clients.
-     *
-     * @return A set of client node IDs
-     */
     public Set<String> getRegisteredClientIds() {
         Set<String> clientIds = new HashSet<>();
         for (Map.Entry<String, NodeType> entry : nodeTypes.entrySet()) {

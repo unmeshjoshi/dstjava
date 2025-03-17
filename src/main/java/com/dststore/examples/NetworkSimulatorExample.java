@@ -22,7 +22,7 @@ public class NetworkSimulatorExample {
     public static void main(String[] args) {
         // Create a message bus with network simulation
         MessageBus messageBus = new MessageBus();
-        SimulatedNetwork simulator = messageBus.getSimulatedNetwork();
+        SimulatedNetwork simulator = messageBus.getNetwork();
 
         // Create three replica endpoints
         List<ReplicaEndpoint> replicaEndpoints = Arrays.asList(

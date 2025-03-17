@@ -23,7 +23,7 @@ public class MessageBusTest {
     @BeforeEach
     public void setUp() {
         messageBus = new MessageBus();
-        network = messageBus.getSimulatedNetwork();
+        network = messageBus.getNetwork();
         receivedMessages.clear();
     }
 
@@ -223,7 +223,7 @@ public class MessageBusTest {
         final String client = "client1";
         final String replica = "replica1";
         final String messageContent = "Client request";
-        messageBus.getSimulatedNetwork().reset();
+        messageBus.getNetwork().reset();
         // Track received messages
         List<String> replicaMessages = new ArrayList<>();
         

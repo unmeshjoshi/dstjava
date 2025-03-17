@@ -845,7 +845,7 @@ public class QuorumKVStore implements QuorumCallback {
     private SimulatedNetwork getSimulatedNetwork() {
         try {
             // Use reflection to check if the message bus has a getSimulatedNetwork method
-            java.lang.reflect.Method method = messageBus.getClass().getMethod("getSimulatedNetwork");
+            java.lang.reflect.Method method = messageBus.getClass().getMethod("getNetwork");
             return (SimulatedNetwork) method.invoke(messageBus);
         } catch (Exception e) {
             // Method doesn't exist or couldn't be invoked

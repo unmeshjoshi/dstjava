@@ -2,11 +2,8 @@ package com.dststore;
 
 import com.dststore.client.Client;
 import com.dststore.message.GetResponse;
-import com.dststore.network.InetAddressAndPort;
 import com.dststore.network.MessageBus;
 import com.dststore.network.SimulatedNetwork;
-import com.dststore.replica.Replica;
-import com.dststore.replica.ReplicaEndpoint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +33,7 @@ public class NetworkSimulationTest {
         messageBus.registerNode("replica-2", this::recordMessage, MessageBus.NodeType.REPLICA);
         messageBus.registerNode("replica-3", this::recordMessage, MessageBus.NodeType.REPLICA);
 
-        simulatedNetwork = messageBus.getSimulatedNetwork();
+        simulatedNetwork = messageBus.getNetwork();
 
         // Create a client
         client = new Client("client-1", messageBus);
@@ -91,7 +88,7 @@ public class NetworkSimulationTest {
         simulatedNetwork.disconnectNodesBidirectional("replica-1", "replica-3");
 
         // Verify that messages cannot be sent across the partition
-        boolean canDeliver = simulatedNetwork.sendMessage(new TestMessage("test"), "replica-1", "replica-2");
+        boolean canDeliver = messageBus.sendMessage(new TestMessage("test"), "replica-1", "replica-2");
         assertFalse(canDeliver);
 
         runSimulation(5);
@@ -101,7 +98,7 @@ public class NetworkSimulationTest {
         simulatedNetwork.reconnectAll();
 
         // Verify that messages can now be sent
-        simulatedNetwork.sendMessage(new TestMessage("test2"), "replica-1", "replica-2");
+        messageBus.sendMessage(new TestMessage("test2"), "replica-1", "replica-2");
         runSimulation(5);
         assertEquals(1, receivedMessages.get("replica-2").size(), "Messages should be delivered after healing partition");
     }
@@ -159,7 +156,7 @@ public class NetworkSimulationTest {
         simulatedNetwork.disconnectNodesBidirectional("replica-1", "client-1");
         
         // Send a message that should be dropped due to partition
-        boolean delivered = simulatedNetwork.sendMessage(
+        boolean delivered = messageBus.sendMessage(
             new TestMessage("test"), "replica-1", "replica-2");
         
         // Message should be accepted but won't be delivered
@@ -177,7 +174,7 @@ public class NetworkSimulationTest {
         simulatedNetwork.reconnectAll();
         
         // Send another message that should now be delivered
-        delivered = simulatedNetwork.sendMessage(
+        delivered = messageBus.sendMessage(
             new TestMessage("test2"), "replica-1", "replica-2");
         
         assertTrue(delivered);
@@ -194,6 +191,10 @@ public class NetworkSimulationTest {
     private static class TestMessage {
         private final String content;
 
+        //For jackson
+        private TestMessage() {
+            this("");
+        }
         public TestMessage(String content) {
             this.content = content;
         }
