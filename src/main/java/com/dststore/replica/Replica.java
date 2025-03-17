@@ -2,6 +2,7 @@ package com.dststore.replica;
 
 import com.dststore.message.*;
 import com.dststore.network.MessageBus;
+import com.dststore.network.SimulatedNetwork;
 
 import java.util.*;
 import java.util.logging.Logger;
@@ -120,7 +121,7 @@ public class Replica {
         checkTimeouts();
     }
     
-    private void processMessage(Object message, String from) {
+    private void processMessage(Object message, SimulatedNetwork.DeliveryContext from) {
         if (message instanceof GetRequest) {
             LOGGER.info("Replica " + replicaId + " processing GetRequest: " + 
                         ((GetRequest) message).getKey());
@@ -228,7 +229,7 @@ public class Replica {
                     operationType.toString(), 
                     value != null ? value : ""
                 );
-                messageBus.send(peerId, replicaId, replicaRequest);
+                var sent = messageBus.sendMessage(replicaRequest, replicaId, peerId);
                 forwardCount++;
                 System.out.println("Replica " + replicaId + " forwarded " + operationType + 
                                  " request to peer " + peerId);
@@ -275,8 +276,9 @@ public class Replica {
         ReplicaResponse response = new ReplicaResponse(
             request.getRequestId(), replicaId, success, request.getKey(), value
         );
-        
-        messageBus.send(request.getOriginReplicaId(), replicaId, response);
+
+        String targetNodeId = request.getOriginReplicaId();
+        var sent = messageBus.sendMessage(response, replicaId, targetNodeId);
         System.out.println("Replica " + replicaId + " sent response back to " + request.getOriginReplicaId());
     }
     
@@ -333,8 +335,9 @@ public class Replica {
             true,
             replicaId
         );
-        messageBus.send(tracker.getClientId(), replicaId, clientResponse);
-        System.out.println("Replica " + replicaId + " sent PutResponse to client: " + 
+        String targetNodeId = tracker.getClientId();
+        var sent = messageBus.sendMessage(clientResponse, replicaId, targetNodeId);
+        System.out.println("Replica " + replicaId + " sent PutResponse to client: " +
                         "messageId=" + clientResponse.getMessageId() + 
                         ", key=" + clientResponse.getKey() + 
                         ", success=" + clientResponse.isSuccess());
@@ -342,8 +345,9 @@ public class Replica {
     
     private void sendGetResponse(QuorumTracker tracker) {
         GetResponse clientResponse = tracker.createClientResponse(replicaId);
-        messageBus.send(tracker.getClientId(), replicaId, clientResponse);
-        System.out.println("Replica " + replicaId + " sent GetResponse to client: " + 
+        String targetNodeId = tracker.getClientId();
+        var sent = messageBus.sendMessage(clientResponse, replicaId, targetNodeId);
+        System.out.println("Replica " + replicaId + " sent GetResponse to client: " +
                         "messageId=" + clientResponse.getMessageId() + 
                         ", key=" + clientResponse.getKey() + 
                         ", value=" + clientResponse.getValue() + 
@@ -395,8 +399,9 @@ public class Replica {
             false,
             replicaId
         );
-        messageBus.send(tracker.getClientId(), replicaId, failureResponse);
-        System.out.println("Replica " + replicaId + " sent timeout PutResponse to client: " + 
+        String targetNodeId = tracker.getClientId();
+        var sent = messageBus.sendMessage(failureResponse, replicaId, targetNodeId);
+        System.out.println("Replica " + replicaId + " sent timeout PutResponse to client: " +
                          "messageId=" + failureResponse.getMessageId() + 
                          ", key=" + failureResponse.getKey() + 
                          ", success=false");
@@ -410,8 +415,9 @@ public class Replica {
             false,
             replicaId
         );
-        messageBus.send(tracker.getClientId(), replicaId, failureResponse);
-        System.out.println("Replica " + replicaId + " sent timeout GetResponse to client: " + 
+        String targetNodeId = tracker.getClientId();
+        var sent = messageBus.sendMessage(failureResponse, replicaId, targetNodeId);
+        System.out.println("Replica " + replicaId + " sent timeout GetResponse to client: " +
                          "messageId=" + failureResponse.getMessageId() + 
                          ", key=" + failureResponse.getKey() + 
                          ", value='', success=false");

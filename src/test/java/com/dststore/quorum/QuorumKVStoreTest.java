@@ -128,9 +128,9 @@ public class QuorumKVStoreTest {
     @Timeout(10) // Increased timeout for reliability
     public void testNetworkPartition() {
         // Create a new message bus and replicas with a simulated network partition
-        SimulatedNetwork partitionedNetwork = new SimulatedNetwork();
-        MessageBus partitionedBus = new MessageBus(partitionedNetwork);
-        
+        MessageBus partitionedBus = new MessageBus();
+        var partitionedNetwork = partitionedBus.getSimulatedNetwork();
+
         // Create three replicas with the same configuration
         List<ReplicaEndpoint> replicas = Arrays.asList(
             new ReplicaEndpoint("replica-1", "localhost", 8001),
@@ -143,7 +143,7 @@ public class QuorumKVStoreTest {
         QuorumKVStore partitionedReplica3 = new QuorumKVStore("replica-3", partitionedBus, replicas, REQUEST_TIMEOUT_TICKS);
         
         // Make sure no prior partitions exist
-        partitionedNetwork.clearPartitions();
+        partitionedNetwork.reconnectAll();
         
         // Tick a few times to ensure all replicas are initialized
         for (int i = 0; i < 5; i++) {
@@ -155,11 +155,9 @@ public class QuorumKVStoreTest {
         
         // Create a network partition: replica1 and replica3 in one partition, replica2 in another
         LOGGER.info("Creating network partition: replica1 and replica3 in partition1, replica2 in partition2");
-        int partition1 = partitionedNetwork.createPartition("replica-1", "replica-3");
-        int partition2 = partitionedNetwork.createPartition("replica-2");
-        
-        LOGGER.info("Created partitions: " + partition1 + " and " + partition2);
-        
+        partitionedNetwork.disconnectNodes("replica-1", "replica-3");
+        partitionedNetwork.disconnectNodes("replica-2", "replica-3");
+
         // Set a value on replica1
         String key = "partition-key";
         String value = "partition-value";
@@ -285,9 +283,8 @@ public class QuorumKVStoreTest {
         
         // Link the partitions to restore communication
         LOGGER.info("Restoring connection between partitions");
-        partitionedNetwork.linkPartitions(partition1, partition2);
-        partitionedNetwork.linkPartitions(partition2, partition1);
-        
+        partitionedNetwork.reconnectAll();
+
         // Allow time for read repair to kick in
         for (int i = 0; i < 15; i++) {
             partitionedBus.tick();
@@ -713,12 +710,10 @@ public class QuorumKVStoreTest {
         
         // Manually craft a VersionedSetValueRequest to replica3
         LOGGER.info("Sending versioned write with clock skew to replica3");
-        messageBus.send("replica-3", "test-client", 
-            new VersionedSetValueRequest(
+        var sent = messageBus.sendMessage(new VersionedSetValueRequest(
                 "skewed-write", key, skewedValue, "test-client", skewedVersion
-            )
-        );
-        
+            ), "test-client", "replica-3");
+
         // Run the simulation to process the message
         runFor(5);
         
@@ -1221,5 +1216,46 @@ public class QuorumKVStoreTest {
         assertEquals(value, getResponse3.getValue(), "Replica3 should have the correct value");
         
         LOGGER.info("Asymmetric partition test passed");
+    }
+
+    @Test
+    public void testQuorumReadWithPartition() {
+        // Reset network state
+        simulatedNetwork.reconnectAll();
+        
+        // Create initial state
+        String key = "test-key";
+        String value = "test-value";
+        
+        // Write value with all replicas connected
+        CompletableFuture<SetValueResponse> putFuture = replica1.setValue(key, value);
+        runFor(10);
+        assertTrue(putFuture.isDone(), "PUT should complete");
+        assertTrue(putFuture.join().isSuccess(), "PUT should succeed");
+        
+        // Simulate network partition by disconnecting nodes
+        simulatedNetwork.disconnectNodesBidirectional("replica-2", "replica-1");
+        simulatedNetwork.disconnectNodesBidirectional("replica-2", "replica-3");
+        
+        // Try to read with replica-2 isolated
+        CompletableFuture<GetValueResponse> getFuture = replica1.getValue(key);
+        runFor(10);
+        
+        // Read should succeed with quorum (replica-1 and replica-3)
+        assertTrue(getFuture.isDone(), "GET should complete with quorum");
+        GetValueResponse response = getFuture.join();
+        assertTrue(response.isSuccess(), "GET should succeed");
+        assertEquals(value, response.getValue(), "GET should return correct value");
+        
+        // Heal partition
+        simulatedNetwork.reconnectAll();
+        
+        // Verify read still works after healing
+        getFuture = replica1.getValue(key);
+        runFor(10);
+        assertTrue(getFuture.isDone(), "GET should complete after healing");
+        response = getFuture.join();
+        assertTrue(response.isSuccess(), "GET should succeed after healing");
+        assertEquals(value, response.getValue(), "GET should return correct value after healing");
     }
 } 

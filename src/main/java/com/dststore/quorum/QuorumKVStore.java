@@ -94,7 +94,7 @@ public class QuorumKVStore implements QuorumCallback {
      * @param message The message to process
      * @param from The sender node ID
      */
-    private void processMessage(Object message, String from) {
+    private void processMessage(Object message, SimulatedNetwork.DeliveryContext from) {
         if (message instanceof GetValueRequest) {
             GetValueRequest getRequest = (GetValueRequest) message;
             // Check if this is a request from another replica or from a client
@@ -158,7 +158,7 @@ public class QuorumKVStore implements QuorumCallback {
                     request.getKey(),
                     replicaId // Use this replica's ID as the client ID
             );
-            messageBus.send(targetReplicaId, replicaId, replicaRequest);
+            var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
         }
     }
     
@@ -201,7 +201,7 @@ public class QuorumKVStore implements QuorumCallback {
                     replicaId, // Use this replica's ID as the client ID
                     newVersion
             );
-            messageBus.send(targetReplicaId, replicaId, replicaRequest);
+            var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
         }
     }
     
@@ -303,7 +303,8 @@ public class QuorumKVStore implements QuorumCallback {
         );
         
         // Send the response back to the requester
-        messageBus.send(request.getClientId(), replicaId, response);
+        String targetNodeId = request.getClientId();
+        var sent = messageBus.sendMessage(response, replicaId, targetNodeId);
     }
     
     /**
@@ -353,7 +354,8 @@ public class QuorumKVStore implements QuorumCallback {
         );
         
         // Send the response back to the requester
-        messageBus.send(request.getClientId(), replicaId, response);
+        String targetNodeId = request.getClientId();
+        var sent = messageBus.sendMessage(response, replicaId, targetNodeId);
     }
     
     /**
@@ -618,7 +620,7 @@ public class QuorumKVStore implements QuorumCallback {
                 
                 try {
                     LOGGER.info("Resending SET request to potentially reachable replica: " + targetReplicaId);
-                    messageBus.send(targetReplicaId, replicaId, replicaRequest);
+                    var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
                 } catch (Exception e) {
                     LOGGER.warning("Failed to resend SET request to " + targetReplicaId + ": " + e.getMessage());
                 }
@@ -646,7 +648,7 @@ public class QuorumKVStore implements QuorumCallback {
                 
                 try {
                     LOGGER.info("Resending GET request to potentially reachable replica: " + targetReplicaId);
-                    messageBus.send(targetReplicaId, replicaId, replicaRequest);
+                    var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
                 } catch (Exception e) {
                     LOGGER.warning("Failed to resend GET request to " + targetReplicaId + ": " + e.getMessage());
                 }

@@ -25,7 +25,7 @@ public class QuorumTest {
     private static final int REPLICA_COUNT = 3; // Using 3 replicas for testing
     
     @BeforeEach
-    public void setUp() {
+    public void setUp() { 
         // Create message bus with network simulation
         messageBus = new MessageBus();
         

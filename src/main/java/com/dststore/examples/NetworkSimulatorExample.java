@@ -21,9 +21,9 @@ public class NetworkSimulatorExample {
      */
     public static void main(String[] args) {
         // Create a message bus with network simulation
-        SimulatedNetwork simulator = new SimulatedNetwork();
-        MessageBus messageBus = new MessageBus(simulator);
-        
+        MessageBus messageBus = new MessageBus();
+        SimulatedNetwork simulator = messageBus.getSimulatedNetwork();
+
         // Create three replica endpoints
         List<ReplicaEndpoint> replicaEndpoints = Arrays.asList(
             new ReplicaEndpoint("replica-1", "localhost", 8001),
@@ -48,40 +48,26 @@ public class NetworkSimulatorExample {
         LOGGER.info("Set message loss rate to 5%");
         
         // Create a network partition
-        LOGGER.info("Creating network partition: replica1 and replica2 in partition1, replica3 in partition2");
-        int partition1 = simulator.createPartition("replica-1", "replica-2");
-        int partition2 = simulator.createPartition("replica-3");
+        LOGGER.info("Creating network partition...");
+        simulator.disconnectNodesBidirectional("replica-1", "replica-3");
+        simulator.disconnectNodesBidirectional("replica-2", "replica-3");
         
-        // Run the simulation for a few ticks
-        LOGGER.info("Running simulation with partitioned network");
-        for (int i = 0; i < 10; i++) {
-            LOGGER.info("Tick " + i);
-            messageBus.tick();
-            replica1.tick();
-            replica2.tick();
-            replica3.tick();
+        // Run for a few ticks to let messages propagate
+        for (int i = 0; i < 5; i++) {
+            simulator.tick();
         }
         
-        // Link the partitions to restore communication
-        LOGGER.info("Restoring connection between partitions");
-        simulator.linkPartitions(partition1, partition2);
-        simulator.linkPartitions(partition2, partition1);
+        // Heal the partition
+        LOGGER.info("Healing network partition...");
+        simulator.reconnectAll();
         
-        // Run the simulation for a few more ticks
-        LOGGER.info("Running simulation with restored network");
-        for (int i = 0; i < 10; i++) {
-            LOGGER.info("Tick " + (i + 10));
-            messageBus.tick();
-            replica1.tick();
-            replica2.tick();
-            replica3.tick();
+        // Run for a few more ticks
+        for (int i = 0; i < 5; i++) {
+            simulator.tick();
         }
         
-        // Print network statistics
+        // Print final statistics
         Map<String, Object> stats = simulator.getStatistics();
-        LOGGER.info("Simulation complete. Statistics:");
-        for (Map.Entry<String, Object> entry : stats.entrySet()) {
-            LOGGER.info(entry.getKey() + ": " + entry.getValue());
-        }
+        LOGGER.info("Final network statistics: " + stats);
     }
 } 

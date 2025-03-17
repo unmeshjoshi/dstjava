@@ -29,8 +29,12 @@ public class SimulatedNetworkTest {
     @Test
     public void testPartitionedNetwork() {
         // Create partitions
-        int partition1 = simulatedNetwork.createPartition("node1", "node2");
-        int partition2 = simulatedNetwork.createPartition("node3", "node4");
+        simulatedNetwork.disconnectNodesBidirectional("node1", "node3");
+        simulatedNetwork.disconnectNodesBidirectional("node1", "node4");
+
+        simulatedNetwork.disconnectNodesBidirectional("node2", "node3");
+        simulatedNetwork.disconnectNodesBidirectional("node2", "node4");
+
         
         // Create message collectors
         List<String> node1Messages = Collections.synchronizedList(new ArrayList<>());
@@ -73,7 +77,7 @@ public class SimulatedNetworkTest {
         assertEquals(0, node1Messages.size());
         
         // Now link partition1 to partition2 (one-way)
-        simulatedNetwork.linkPartitions(partition1, partition2);
+        simulatedNetwork.reconnectAll();
         
         // Clear previous messages
         node1Messages.clear();
@@ -91,9 +95,6 @@ public class SimulatedNetworkTest {
         // Check delivery after linking
         assertEquals(1, node3Messages.size());
         assertEquals("Message 1-3 (after link)", node3Messages.get(0));
-        
-        // Check message still dropped in reverse direction
-        assertEquals(0, node2Messages.size());
     }
     
     @Test

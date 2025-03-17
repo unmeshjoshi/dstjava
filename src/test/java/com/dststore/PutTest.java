@@ -75,7 +75,9 @@ public class PutTest {
         
         // Send to first replica
         System.out.println("Starting testQuorumPut test");
-        messageBus.send(replicas.get(0).getReplicaId(), client.getClientId(), putRequest);
+        String targetNodeId = replicas.get(0).getReplicaId();
+        String senderId = client.getClientId();
+        var sent = messageBus.sendMessage(putRequest, senderId, targetNodeId);
         System.out.println("Client sent PutRequest for key '" + key + "' with value '" + value + "' to replica " + replicas.get(0).getReplicaId());
         
         // Run simulation until put completes

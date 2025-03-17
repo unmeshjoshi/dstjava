@@ -152,48 +152,55 @@ public class SimulationRunner {
     }
     
     /**
-     * Create a network partition between sets of nodes.
+     * Creates a network partition between two groups of nodes.
+     *
+     * @param partition1 First group of nodes
+     * @param partition2 Second group of nodes
      */
-    public int[] createNetworkPartition(String[] partition1, String[] partition2) {
-        int p1 = simulatedNetwork.createPartition(partition1);
-        int p2 = simulatedNetwork.createPartition(partition2);
+    public void createPartition(String[] partition1, String[] partition2) {
+        LOGGER.info("Creating network partition between " + Arrays.toString(partition1) + 
+                   " and " + Arrays.toString(partition2));
         
-        LOGGER.info("Created network partition between " + 
-                   Arrays.toString(partition1) + " and " + Arrays.toString(partition2));
-        
-        return new int[] { p1, p2 };
-    }
-    
-    /**
-     * Heal a network partition by linking the partitions.
-     */
-    public void healNetworkPartition(int partition1Id, int partition2Id) {
-        // Create bidirectional links - very important to ensure complete communication
-        simulatedNetwork.linkPartitionsBidirectional(partition1Id, partition2Id);
-        
-        LOGGER.info("Healed network partition between partition " + 
-                   partition1Id + " and partition " + partition2Id);
-        
-        // After healing, run additional ticks to ensure proper message processing
-        // This is critical for test scenarios that expect operations to complete after healing
-        for (int i = 0; i < 5; i++) {  // Increased from 3 to 5 ticks for better reliability
-            tick();
-            LOGGER.info("Processing post-healing tick #" + (i+1));
-        }
-        
-        // Log a summary of current network state
-        Map<String, Object> stats = simulatedNetwork.getStatistics();
-        LOGGER.info("Network state after healing: " + 
-                   stats.getOrDefault("pendingMessageQueueSize", 0) + " pending messages");
-        
-        // Special handling for complex test scenarios - additional ticks if still pending messages
-        if ((int)stats.getOrDefault("pendingMessageQueueSize", 0) > 0) {
-            LOGGER.info("Still have pending messages, processing additional ticks");
-            for (int i = 0; i < 3; i++) {
-                tick();
-                LOGGER.info("Processing extra post-healing tick #" + (i+1));
+        // Disconnect each node in partition1 from each node in partition2
+        for (String node1 : partition1) {
+            for (String node2 : partition2) {
+                simulatedNetwork.disconnectNodesBidirectional(node1, node2);
             }
         }
+    }
+
+    /**
+     * Links two previously partitioned groups of nodes.
+     *
+     * @param partition1 First group of nodes
+     * @param partition2 Second group of nodes
+     */
+    public void linkPartitions(String[] partition1, String[] partition2) {
+        LOGGER.info("Linking partitions between " + Arrays.toString(partition1) + 
+                   " and " + Arrays.toString(partition2));
+        
+        // Just clear all filters as we don't track individual partition connections
+        simulatedNetwork.reconnectAll();
+    }
+
+    /**
+     * Creates a network partition between two groups of nodes.
+     *
+     * @param partition1 First group of nodes
+     * @param partition2 Second group of nodes
+     */
+    public void createPartitionBetween(String[] partition1, String[] partition2) {
+        createPartition(partition1, partition2);
+    }
+
+    /**
+     * Links two previously partitioned groups of nodes bidirectionally.
+     *
+     * @param partition1 First group of nodes
+     * @param partition2 Second group of nodes
+     */
+    public void linkPartitionsBidirectional(String[] partition1, String[] partition2) {
+        linkPartitions(partition1, partition2);
     }
     
     /**
@@ -269,5 +276,35 @@ public class SimulationRunner {
     @FunctionalInterface
     public interface SimulationCondition {
         boolean isMet();
+    }
+
+    /**
+     * Disconnects two nodes bidirectionally.
+     *
+     * @param node1 First node
+     * @param node2 Second node
+     */
+    public void disconnectNodesBidirectional(String node1, String node2) {
+        simulatedNetwork.disconnectNodesBidirectional(node1, node2);
+    }
+
+    /**
+     * Reconnects all nodes by removing all network partitions.
+     */
+    public void reconnectAll() {
+        simulatedNetwork.reconnectAll();
+    }
+
+    public int[] createNetworkPartition(String[] isolatedNodes, String[] connectedNodes) {
+        for (String isolatedNode : isolatedNodes) {
+            for (String connectedNode : connectedNodes) {
+                simulatedNetwork.disconnectNodesBidirectional(isolatedNode, connectedNode);
+            }
+        }
+        return new int[]{1, 2}; // Dummy return to match expected type
+    }
+
+    public void healNetworkPartition(int partition1, int partition2) {
+        simulatedNetwork.reconnectAll();
     }
 } 

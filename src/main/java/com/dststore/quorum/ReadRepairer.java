@@ -66,8 +66,8 @@ public class ReadRepairer {
                     latestResponse.getVersion()
             );
 
-            messageBus.send(outdatedReplicaId, replicaId, repairRequest);
-            LOGGER.info("Sent read repair for key " + key + " to replica " + outdatedReplicaId + 
+            var sent = messageBus.sendMessage(repairRequest, replicaId, outdatedReplicaId);
+            LOGGER.info("Sent read repair for key " + key + " to replica " + outdatedReplicaId +
                        " with version " + latestResponse.getVersion());
         }
     }

@@ -5,6 +5,7 @@ import com.dststore.message.GetResponse;
 import com.dststore.message.PutRequest;
 import com.dststore.message.PutResponse;
 import com.dststore.network.MessageBus;
+import com.dststore.network.SimulatedNetwork;
 
 import java.util.Map;
 import java.util.UUID;
@@ -37,8 +38,8 @@ public class Client {
         
         CompletableFuture<GetResponse> future = new CompletableFuture<>();
         pendingRequests.put(messageId, future);
-        
-        messageBus.send(replicaId, clientId, request);
+
+        var sent = messageBus.sendMessage(request, clientId, replicaId);
         System.out.println("Client " + clientId + " sent GetRequest for key '" + key + "' to replica " + replicaId + " with messageId " + messageId);
         
         return future;
@@ -58,14 +59,14 @@ public class Client {
         
         CompletableFuture<PutResponse> future = new CompletableFuture<>();
         pendingRequests.put(messageId, future);
-        
-        messageBus.send(replicaId, clientId, request);
+
+        var sent = messageBus.sendMessage(request, clientId, replicaId);
         System.out.println("Client " + clientId + " sent PutRequest for key '" + key + "' with value '" + value + "' to replica " + replicaId + " with messageId " + messageId);
         
         return future;
     }
     
-    private void handleMessage(Object message, String from) {
+    private void handleMessage(Object message, SimulatedNetwork.DeliveryContext from) {
         if (message instanceof GetResponse) {
             GetResponse response = (GetResponse) message;
             System.out.println("Client " + clientId + " processing GetResponse: messageId=" + response.getMessageId() + 
