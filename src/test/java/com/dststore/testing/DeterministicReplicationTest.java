@@ -4,7 +4,7 @@ import com.dststore.client.Client;
 import com.dststore.message.GetResponse;
 import com.dststore.message.PutResponse;
 import com.dststore.network.MessageBus;
-import com.dststore.replica.Replica;
+import com.dststore.replica.SimpleReplica;
 import com.dststore.replica.ReplicaEndpoint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +36,7 @@ public class DeterministicReplicationTest {
     private static final int MAX_SIMULATION_TICKS = 200; // Increased from 100 to 200 to accommodate extreme exponential delays
     
     private MessageBus messageBus;
-    private Map<String, Replica> replicas;
+    private Map<String, SimpleReplica> replicas;
     private Client client;
     private SimulationRunner simulation;
     
@@ -64,7 +64,7 @@ public class DeterministicReplicationTest {
             String ipAddress = "localhost";
             int port = 8000 + i;
             
-            Replica replica = new Replica(replicaId, messageBus, ipAddress, port, allEndpoints);
+            SimpleReplica replica = new SimpleReplica(replicaId, messageBus, ipAddress, port, allEndpoints);
             replicas.put(replicaId, replica);
         }
         

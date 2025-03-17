@@ -3,7 +3,7 @@ package com.dststore;
 import com.dststore.client.Client;
 import com.dststore.message.GetResponse;
 import com.dststore.network.MessageBus;
-import com.dststore.replica.Replica;
+import com.dststore.replica.SimpleReplica;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SimpleTest {
     
     private MessageBus messageBus;
-    private Replica replica;
+    private SimpleReplica replica;
     private Client client;
     
     @BeforeEach
@@ -27,7 +27,7 @@ public class SimpleTest {
         messageBus = new MessageBus();
         
         // Create replica and set initial value
-        replica = new Replica("replica-1", messageBus);
+        replica = new SimpleReplica("replica-1", messageBus);
         replica.setValue("key1", "value1");
         
         // Create client
@@ -75,7 +75,7 @@ public class SimpleTest {
     
     private void runSimulationUntilComplete(
             MessageBus messageBus, 
-            Replica replica, 
+            SimpleReplica replica, 
             Client client, 
             CompletableFuture<GetResponse> future) {
         

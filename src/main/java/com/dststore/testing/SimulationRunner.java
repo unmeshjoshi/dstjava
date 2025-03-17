@@ -4,6 +4,7 @@ import com.dststore.client.Client;
 import com.dststore.network.MessageBus;
 import com.dststore.network.SimulatedNetwork;
 import com.dststore.replica.Replica;
+import com.dststore.replica.SimpleReplica;
 
 import java.util.*;
 import java.util.logging.Level;
@@ -16,7 +17,7 @@ import java.util.logging.Logger;
 public class SimulationRunner {
     private static final Logger LOGGER = Logger.getLogger(SimulationRunner.class.getName());
     
-    private final Map<String, Replica> replicas;
+    private final Map<String, ? extends Replica> replicas;
     private final Map<String, MessageBus> messageBuses;
     private final SimulatedNetwork simulatedNetwork;
     private final Random random;
@@ -26,8 +27,9 @@ public class SimulationRunner {
     
     /**
      * Create a new simulation runner with the given components.
+     * This constructor accepts any type that extends Replica.
      */
-    public SimulationRunner(Map<String, Replica> replicas, MessageBus messageBus) {
+    public SimulationRunner(Map<String, ? extends Replica> replicas, MessageBus messageBus) {
         this.replicas = new HashMap<>(replicas);
         this.messageBuses = new HashMap<>();
         
@@ -41,7 +43,7 @@ public class SimulationRunner {
         this.random = new Random(42);
         
         // Use the same message bus for all replicas
-        for (Map.Entry<String, Replica> entry : replicas.entrySet()) {
+        for (Map.Entry<String, ? extends Replica> entry : replicas.entrySet()) {
             messageBuses.put(entry.getKey(), messageBus);
         }
         
@@ -124,7 +126,7 @@ public class SimulationRunner {
         messageBus.tick();
 
         // Then process all active replicas to handle those messages
-        for (Map.Entry<String, Replica> entry : replicas.entrySet()) {
+        for (Map.Entry<String, ? extends Replica> entry : replicas.entrySet()) {
             String replicaId = entry.getKey();
             Replica replica = entry.getValue();
             

@@ -3,7 +3,7 @@ package com.dststore;
 import com.dststore.client.Client;
 import com.dststore.message.GetResponse;
 import com.dststore.network.MessageBus;
-import com.dststore.replica.Replica;
+import com.dststore.replica.SimpleReplica;
 import com.dststore.replica.ReplicaEndpoint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class QuorumTest {
     
     private MessageBus messageBus;
-    private List<Replica> replicas;
+    private List<SimpleReplica> replicas;
     private Client client;
     private static final int REPLICA_COUNT = 3; // Using 3 replicas for testing
     
@@ -48,7 +48,7 @@ public class QuorumTest {
             String ipAddress = "localhost";
             int port = 8000 + i;
             
-            Replica replica = new Replica(replicaId, messageBus, ipAddress, port, allEndpoints);
+            SimpleReplica replica = new SimpleReplica(replicaId, messageBus, ipAddress, port, allEndpoints);
             replicas.add(replica);
             
             // Set initial value in the first replica only
@@ -98,30 +98,23 @@ public class QuorumTest {
     }
     
     private void runSimulationUntilComplete(CompletableFuture<GetResponse> future) {
-        int maxTicks = 40; // Increase ticks for distributed operation
+        int maxTicks = 20; // Safeguard against infinite loops
         int tickCount = 0;
         
         while (!future.isDone() && tickCount < maxTicks) {
-            // Process message bus
+            // Process messages
             messageBus.tick();
             
             // Process all replicas
-            for (Replica replica : replicas) {
+            for (SimpleReplica replica : replicas) {
                 replica.tick();
-            }
-            
-            if (tickCount % 5 == 0) {
-                System.out.println("Tick " + tickCount + ": Future completed = " + future.isDone());
             }
             
             tickCount++;
         }
         
         if (tickCount >= maxTicks && !future.isDone()) {
-            System.out.println("TEST FAILED: Maximum tick count reached without completing the future");
             fail("Simulation reached maximum tick count without completing the future");
-        } else {
-            System.out.println("Simulation completed in " + tickCount + " ticks");
         }
     }
 } 

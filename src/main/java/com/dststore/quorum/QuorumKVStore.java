@@ -3,6 +3,7 @@ package com.dststore.quorum;
 import com.dststore.network.MessageBus;
 import com.dststore.network.SimulatedNetwork;
 import com.dststore.quorum.messages.*;
+import com.dststore.replica.Replica;
 import com.dststore.replica.ReplicaEndpoint;
 
 import java.util.*;
@@ -19,13 +20,10 @@ import java.util.stream.Collectors;
  *
  * This implementation uses versioned values to detect and resolve conflicts.
  */
-public class QuorumKVStore implements QuorumCallback {
+public class QuorumKVStore extends Replica implements QuorumCallback {
     private static final Logger LOGGER = Logger.getLogger(QuorumKVStore.class.getName());
     
-    private final String replicaId;
-    private final MessageBus messageBus;
     private final List<String> replicaIds;
-    private final int quorumSize;
     private final Map<String, StoredValue> storage = new ConcurrentHashMap<>();
     private final ClientState clientState = new ClientState();
     private final ReadRepairer readRepairer;
@@ -34,10 +32,6 @@ public class QuorumKVStore implements QuorumCallback {
     // Track pending quorum operations
     private final Map<String, PendingGetOperation> pendingGetOperations = new ConcurrentHashMap<>();
     private final Map<String, PendingSetOperation> pendingSetOperations = new ConcurrentHashMap<>();
-    
-    // Timeout settings
-    private final long requestTimeoutTicks;
-    private long currentTick = 0;
     
     /**
      * Creates a new QuorumKVStore.
@@ -48,53 +42,32 @@ public class QuorumKVStore implements QuorumCallback {
      * @param requestTimeoutTicks The number of ticks after which a request times out
      */
     public QuorumKVStore(String replicaId, MessageBus messageBus, List<ReplicaEndpoint> allReplicas, long requestTimeoutTicks) {
-        this.replicaId = replicaId;
-        this.messageBus = messageBus;
-        this.requestTimeoutTicks = requestTimeoutTicks;
-        this.readRepairer = new ReadRepairer(messageBus, replicaId);
+        super(replicaId, messageBus, "localhost", 8000 + Integer.parseInt(replicaId.split("-")[1]), allReplicas, requestTimeoutTicks);
         
-        // Register with the message bus
-        messageBus.registerNode(replicaId, this::processMessage, MessageBus.NodeType.REPLICA);
+        this.readRepairer = new ReadRepairer(messageBus, replicaId);
         
         // Extract replica IDs
         this.replicaIds = allReplicas.stream()
-                .map(ReplicaEndpoint::getReplicaId)
-                .collect(Collectors.toList());
-        
-        // Calculate quorum size (majority)
-        this.quorumSize = (allReplicas.size() / 2) + 1;
+            .map(ReplicaEndpoint::getReplicaId)
+            .collect(Collectors.toList());
         
         LOGGER.info("QuorumKVStore " + replicaId + " created with quorum size " + quorumSize + 
                    " from " + allReplicas.size() + " replicas");
     }
     
     /**
-     * Processes a tick, handling timeouts and message processing.
+     * Creates a new QuorumKVStore with default timeout.
+     *
+     * @param replicaId The ID of this replica
+     * @param messageBus The message bus for communication
+     * @param allReplicas The list of all replicas in the system
      */
-    public void tick() {
-        // Increment the current tick
-        currentTick++;
-
-        messageBus.tick();
-        
-        // Check for operation timeouts
-        checkTimeouts();
-        
-        // For complex partition scenarios, we need to check if any operations
-        // might be stuck due to network partition healing
-        // This happens rarely but is necessary for edge cases
-        if (currentTick % 5 == 0) {  // Only check every 5 ticks
-            checkStuckOperations();
-        }
+    public QuorumKVStore(String replicaId, MessageBus messageBus, List<ReplicaEndpoint> allReplicas) {
+        this(replicaId, messageBus, allReplicas, 10); // Default timeout of 10 ticks
     }
     
-    /**
-     * Processes an incoming message.
-     *
-     * @param message The message to process
-     * @param from The sender node ID
-     */
-    private void processMessage(Object message, SimulatedNetwork.DeliveryContext from) {
+    @Override
+    protected void processMessage(Object message, SimulatedNetwork.DeliveryContext from) {
         if (message instanceof GetValueRequest) {
             GetValueRequest getRequest = (GetValueRequest) message;
             // Check if this is a request from another replica or from a client
@@ -123,6 +96,32 @@ public class QuorumKVStore implements QuorumCallback {
             processSetValueResponse((SetValueResponse) message);
         } else {
             LOGGER.warning("Received unknown message type: " + message.getClass().getName());
+        }
+    }
+    
+    @Override
+    protected void checkTimeouts() {
+        // Check GET operations
+        List<PendingGetOperation> timedOutGets = pendingGetOperations.values().stream()
+                .filter(op -> op.hasTimedOut(currentTick))
+                .collect(Collectors.toList());
+        
+        for (PendingGetOperation operation : timedOutGets) {
+            LOGGER.warning("GET operation timed out: " + operation.getOperationId());
+            pendingGetOperations.remove(operation.getOperationId());
+            onGetQuorumTimeout(operation.getKey(), operation.getResponses(), operation.getClientMessageId());
+        }
+        
+        // Check SET operations
+        List<PendingSetOperation> timedOutSets = pendingSetOperations.values().stream()
+                .filter(op -> op.hasTimedOut(currentTick))
+                .collect(Collectors.toList());
+        
+        for (PendingSetOperation operation : timedOutSets) {
+            LOGGER.warning("SET operation timed out: " + operation.getOperationId());
+            pendingSetOperations.remove(operation.getOperationId());
+            onSetQuorumTimeout(operation.getKey(), operation.getValue(), 
+                              operation.getResponses(), operation.getClientMessageId());
         }
     }
     
@@ -359,34 +358,6 @@ public class QuorumKVStore implements QuorumCallback {
     }
     
     /**
-     * Checks for timed-out operations.
-     */
-    private void checkTimeouts() {
-        // Check GET operations
-        List<PendingGetOperation> timedOutGets = pendingGetOperations.values().stream()
-                .filter(op -> op.hasTimedOut(currentTick))
-                .collect(Collectors.toList());
-        
-        for (PendingGetOperation operation : timedOutGets) {
-            LOGGER.warning("GET operation timed out: " + operation.getOperationId());
-            pendingGetOperations.remove(operation.getOperationId());
-            onGetQuorumTimeout(operation.getKey(), operation.getResponses(), operation.getClientMessageId());
-        }
-        
-        // Check SET operations
-        List<PendingSetOperation> timedOutSets = pendingSetOperations.values().stream()
-                .filter(op -> op.hasTimedOut(currentTick))
-                .collect(Collectors.toList());
-        
-        for (PendingSetOperation operation : timedOutSets) {
-            LOGGER.warning("SET operation timed out: " + operation.getOperationId());
-            pendingSetOperations.remove(operation.getOperationId());
-            onSetQuorumTimeout(operation.getKey(), operation.getValue(), 
-                              operation.getResponses(), operation.getClientMessageId());
-        }
-    }
-    
-    /**
      * Gets a value from the store.
      *
      * @param key The key to get
@@ -532,127 +503,61 @@ public class QuorumKVStore implements QuorumCallback {
     }
     
     /**
-     * Checks for operations that might be stuck due to network issues and
-     * attempts to unstick them if network conditions have improved.
+     * Gets the current tick count.
+     *
+     * @return The current tick count
      */
-    private void checkStuckOperations() {
-        // First check for SET operations that might be stuck
-        for (PendingSetOperation operation : new ArrayList<>(pendingSetOperations.values())) {
-            // If the operation has been pending for a while and has partial responses,
-            // or if we're at a high tick value which might indicate healing after partition
-            boolean potentiallyStuck = (currentTick - operation.getStartTick() > requestTimeoutTicks / 2 &&
-                !operation.getResponses().isEmpty() && 
-                operation.getResponses().size() < quorumSize) ||
-                (currentTick > 50); // Higher ticks could indicate post-healing scenario
-            
-            if (potentiallyStuck) {
-                LOGGER.info("Detected potentially stuck SET operation: " + operation.getOperationId() + 
-                          " with " + operation.getResponses().size() + "/" + quorumSize + " responses after " + 
-                          (currentTick - operation.getStartTick()) + " ticks");
-                
-                // Resend requests to all replicas not yet responded
-                resendSetValueRequests(operation);
-                
-                // If the operation is very old and has some responses, but still not enough for quorum,
-                // consider relaxing the quorum requirement slightly to avoid permanent failures
-                if (currentTick - operation.getStartTick() > requestTimeoutTicks * 2 && 
-                    operation.getResponses().size() >= Math.max(quorumSize - 1, 1)) {
-                    
-                    LOGGER.warning("Operation " + operation.getOperationId() + 
-                                 " has been pending for a very long time. Forcing completion with best-effort responses.");
-                    onSetQuorumReached(operation.getKey(), operation.getValue(), 
-                                      operation.getResponses(), operation.getClientMessageId());
-                    pendingSetOperations.remove(operation.getOperationId());
-                }
-            }
+    public long getCurrentTick() {
+        return currentTick;
+    }
+    
+    /**
+     * Disconnects from a specific replica by dropping all messages sent to it.
+     *
+     * @param targetReplicaId The ID of the replica to disconnect from
+     */
+    public void disconnectFrom(String targetReplicaId) {
+        if (!replicaIds.contains(targetReplicaId)) {
+            LOGGER.warning("Cannot disconnect from unknown replica: " + targetReplicaId);
+            return;
         }
         
-        // Then check for GET operations that might be stuck
-        for (PendingGetOperation operation : new ArrayList<>(pendingGetOperations.values())) {
-            // If the operation has been pending for a while and has partial responses,
-            // or if we're at a high tick value which might indicate healing after partition
-            boolean potentiallyStuck = (currentTick - operation.getStartTick() > requestTimeoutTicks / 2 &&
-                !operation.getResponses().isEmpty() && 
-                operation.getResponses().size() < quorumSize) ||
-                (currentTick > 50); // Higher ticks could indicate post-healing scenario
-            
-            if (potentiallyStuck) {
-                LOGGER.info("Detected potentially stuck GET operation: " + operation.getOperationId() + 
-                          " with " + operation.getResponses().size() + "/" + quorumSize + " responses after " + 
-                          (currentTick - operation.getStartTick()) + " ticks");
-                
-                // Resend requests to all replicas not yet responded
-                resendGetValueRequests(operation);
-                
-                // If the operation is very old and has some responses, but still not enough for quorum,
-                // consider relaxing the quorum requirement slightly to avoid permanent failures
-                if (currentTick - operation.getStartTick() > requestTimeoutTicks * 2 && 
-                    operation.getResponses().size() >= Math.max(quorumSize - 1, 1)) {
-                    
-                    LOGGER.warning("Operation " + operation.getOperationId() + 
-                                 " has been pending for a very long time. Forcing completion with best-effort responses.");
-                    onGetQuorumReached(operation.getKey(), operation.getResponses(), operation.getClientMessageId());
-                    pendingGetOperations.remove(operation.getOperationId());
+        // Use the NetworkSimulator to configure message dropping
+        SimulatedNetwork simulator = getSimulatedNetwork();
+        if (simulator != null) {
+            simulator.addMessageFilter((message, from, to) -> {
+                // Block messages from this replica to the target replica
+                if (from.equals(replicaId) && to.equals(targetReplicaId)) {
+                    return false; // Drop the message
                 }
-            }
+                return true; // Allow all other messages
+            });
+            LOGGER.info("Replica " + replicaId + " is now dropping messages to " + targetReplicaId);
+        } else {
+            LOGGER.warning("Network simulation is not enabled, cannot drop messages");
         }
     }
     
     /**
-     * Resends SET requests for a potentially stuck operation
+     * Restores the connection to a previously disconnected replica.
+     * Note: This is a simplified implementation that clears all message filters.
+     * In a more sophisticated implementation, we would keep track of specific filters.
+     *
+     * @param targetReplicaId The ID of the replica to reconnect to
      */
-    private void resendSetValueRequests(PendingSetOperation operation) {
-        // Check which replicas we've already heard from
-        Set<String> respondedReplicas = operation.getResponses().stream()
-            .map(SetValueResponse::getReplicaId)
-            .collect(Collectors.toSet());
-        
-        // Resend to replicas we haven't heard from
-        for (String targetReplicaId : replicaIds) {
-            if (!respondedReplicas.contains(targetReplicaId)) {
-                SetValueRequest replicaRequest = new SetValueRequest(
-                    operation.getOperationId(),
-                    operation.getKey(),
-                    operation.getValue(),
-                    replicaId,
-                    operation.getVersion() // Use the same version
-                );
-                
-                try {
-                    LOGGER.info("Resending SET request to potentially reachable replica: " + targetReplicaId);
-                    var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
-                } catch (Exception e) {
-                    LOGGER.warning("Failed to resend SET request to " + targetReplicaId + ": " + e.getMessage());
-                }
-            }
+    public void reconnectTo(String targetReplicaId) {
+        if (!replicaIds.contains(targetReplicaId)) {
+            LOGGER.warning("Cannot reconnect to unknown replica: " + targetReplicaId);
+            return;
         }
-    }
-    
-    /**
-     * Resends GET requests for a potentially stuck operation
-     */
-    private void resendGetValueRequests(PendingGetOperation operation) {
-        // Check which replicas we've already heard from
-        Set<String> respondedReplicas = operation.getResponses().stream()
-            .map(GetValueResponse::getReplicaId)
-            .collect(Collectors.toSet());
         
-        // Resend to replicas we haven't heard from
-        for (String targetReplicaId : replicaIds) {
-            if (!respondedReplicas.contains(targetReplicaId)) {
-                GetValueRequest replicaRequest = new GetValueRequest(
-                    operation.getOperationId(),
-                    operation.getKey(),
-                    replicaId
-                );
-                
-                try {
-                    LOGGER.info("Resending GET request to potentially reachable replica: " + targetReplicaId);
-                    var sent = messageBus.sendMessage(replicaRequest, replicaId, targetReplicaId);
-                } catch (Exception e) {
-                    LOGGER.warning("Failed to resend GET request to " + targetReplicaId + ": " + e.getMessage());
-                }
-            }
+        // Using a dummy filter that allows all messages to effectively reset filtering
+        SimulatedNetwork simulator = getSimulatedNetwork();
+        if (simulator != null) {
+            simulator.addMessageFilter((message, from, to) -> true);
+            LOGGER.info("Replica " + replicaId + " has restored connection to " + targetReplicaId);
+        } else {
+            LOGGER.warning("Network simulation is not enabled, cannot restore connection");
         }
     }
     
@@ -776,80 +681,9 @@ public class QuorumKVStore implements QuorumCallback {
         public long getVersion() {
             return version;
         }
-    }
-    
-    /**
-     * Gets the current tick count.
-     *
-     * @return The current tick count
-     */
-    public long getCurrentTick() {
-        return currentTick;
-    }
-    
-    /**
-     * Disconnects from a specific replica by dropping all messages sent to it.
-     *
-     * @param targetReplicaId The ID of the replica to disconnect from
-     */
-    public void disconnectFrom(String targetReplicaId) {
-        if (!replicaIds.contains(targetReplicaId)) {
-            LOGGER.warning("Cannot disconnect from unknown replica: " + targetReplicaId);
-            return;
-        }
         
-        // Use the NetworkSimulator to configure message dropping
-        SimulatedNetwork simulator = getSimulatedNetwork();
-        if (simulator != null) {
-            simulator.addMessageFilter((message, from, to) -> {
-                // Block messages from this replica to the target replica
-                if (from.equals(replicaId) && to.equals(targetReplicaId)) {
-                    return false; // Drop the message
-                }
-                return true; // Allow all other messages
-            });
-            LOGGER.info("Replica " + replicaId + " is now dropping messages to " + targetReplicaId);
-        } else {
-            LOGGER.warning("Network simulation is not enabled, cannot drop messages");
-        }
-    }
-    
-    /**
-     * Restores the connection to a previously disconnected replica.
-     * Note: This is a simplified implementation that clears all message filters.
-     * In a more sophisticated implementation, we would keep track of specific filters.
-     *
-     * @param targetReplicaId The ID of the replica to reconnect to
-     */
-    public void reconnectTo(String targetReplicaId) {
-        if (!replicaIds.contains(targetReplicaId)) {
-            LOGGER.warning("Cannot reconnect to unknown replica: " + targetReplicaId);
-            return;
-        }
-        
-        // Using a dummy filter that allows all messages to effectively reset filtering
-        SimulatedNetwork simulator = getSimulatedNetwork();
-        if (simulator != null) {
-            simulator.addMessageFilter((message, from, to) -> true);
-            LOGGER.info("Replica " + replicaId + " has restored connection to " + targetReplicaId);
-        } else {
-            LOGGER.warning("Network simulation is not enabled, cannot restore connection");
-        }
-    }
-    
-    /**
-     * Gets the simulated network from the message bus if available.
-     * 
-     * @return The SimulatedNetwork instance or null if not available
-     */
-    private SimulatedNetwork getSimulatedNetwork() {
-        try {
-            // Use reflection to check if the message bus has a getSimulatedNetwork method
-            java.lang.reflect.Method method = messageBus.getClass().getMethod("getNetwork");
-            return (SimulatedNetwork) method.invoke(messageBus);
-        } catch (Exception e) {
-            // Method doesn't exist or couldn't be invoked
-            return null;
+        public void setVersion(long version) {
+            this.version = version;
         }
     }
 } 

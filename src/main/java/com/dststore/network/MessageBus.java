@@ -247,4 +247,13 @@ public class MessageBus {
         }
         return clientIds;
     }
+
+    /**
+     * Gets the underlying simulated network.
+     *
+     * @return The SimulatedNetwork instance
+     */
+    public SimulatedNetwork getSimulatedNetwork() {
+        return simulatedNetwork;
+    }
 } 

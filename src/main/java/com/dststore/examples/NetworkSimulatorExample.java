@@ -2,7 +2,7 @@ package com.dststore.examples;
 
 import com.dststore.network.MessageBus;
 import com.dststore.network.SimulatedNetwork;
-import com.dststore.replica.Replica;
+import com.dststore.replica.SimpleReplica;
 import com.dststore.replica.ReplicaEndpoint;
 
 import java.util.Arrays;
@@ -32,9 +32,9 @@ public class NetworkSimulatorExample {
         );
         
         // Create three replicas
-        Replica replica1 = new Replica("replica-1", messageBus, "localhost", 8001, replicaEndpoints, 10);
-        Replica replica2 = new Replica("replica-2", messageBus, "localhost", 8002, replicaEndpoints, 10);
-        Replica replica3 = new Replica("replica-3", messageBus, "localhost", 8003, replicaEndpoints, 10);
+        SimpleReplica replica1 = new SimpleReplica("replica-1", messageBus, "localhost", 8001, replicaEndpoints, 10);
+        SimpleReplica replica2 = new SimpleReplica("replica-2", messageBus, "localhost", 8002, replicaEndpoints, 10);
+        SimpleReplica replica3 = new SimpleReplica("replica-3", messageBus, "localhost", 8003, replicaEndpoints, 10);
         
         // Configure network conditions
         LOGGER.info("Configuring network conditions");
