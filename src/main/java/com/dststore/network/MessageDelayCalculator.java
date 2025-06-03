@@ -1,5 +1,6 @@
 package com.dststore.network;
 
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -15,15 +16,32 @@ public class MessageDelayCalculator {
     // Latency configuration
     private int minLatencyTicks;
     private int maxLatencyTicks;
+    
+    // Random number generator (can be deterministic or non-deterministic)
+    private final Random random;
 
     /**
      * Creates a new MessageDelayCalculator with the specified latency range.
+     * Uses ThreadLocalRandom (non-deterministic) for backward compatibility.
      *
      * @param minLatencyTicks Minimum latency in ticks
      * @param maxLatencyTicks Maximum latency in ticks
      */
     public MessageDelayCalculator(int minLatencyTicks, int maxLatencyTicks) {
+        this(minLatencyTicks, maxLatencyTicks, null); // null means use ThreadLocalRandom
+    }
+
+    /**
+     * Creates a new MessageDelayCalculator with the specified latency range and Random instance.
+     * This constructor allows for deterministic behavior when a seeded Random is provided.
+     *
+     * @param minLatencyTicks Minimum latency in ticks
+     * @param maxLatencyTicks Maximum latency in ticks
+     * @param random Random instance to use (null to use ThreadLocalRandom)
+     */
+    public MessageDelayCalculator(int minLatencyTicks, int maxLatencyTicks, Random random) {
         setLatency(minLatencyTicks, maxLatencyTicks);
+        this.random = random;
     }
 
     /**
@@ -82,17 +100,19 @@ public class MessageDelayCalculator {
         // Calculate jitter using exponential distribution
         var jitter = 0;
         if (maxJitter > 0) {
-            var random = ThreadLocalRandom.current().nextDouble();
+            // Use provided Random instance or fall back to ThreadLocalRandom
+            var randomValue = (random != null) ? random.nextDouble() : ThreadLocalRandom.current().nextDouble();
+            
             // Use exponential distribution for jitter (more realistic)
             // Scale -ln(random) to the range [0, maxJitter]
-            var expRandom = -Math.log(random);
+            var expRandom = -Math.log(randomValue);
             // Normalize to [0, 1] range by dividing by theoretical max (which is technically infinity, but we use 5.0)
             var normalizedRandom = Math.min(expRandom / 5.0, 1.0);
             // Scale to maxJitter
             jitter = (int) Math.floor(normalizedRandom * maxJitter);
 
             LOGGER.log(Level.INFO, "Exponential delay calculation: random={0}, expRandom={1}, normalizedRandom={2}, jitter={3}",
-                    new Object[]{random, expRandom, normalizedRandom, jitter});
+                    new Object[]{randomValue, expRandom, normalizedRandom, jitter});
         }
 
         var totalDelay = baseDelay + jitter;

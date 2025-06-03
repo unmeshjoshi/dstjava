@@ -24,11 +24,14 @@ import java.util.logging.Logger;
 public class SimulatedNetwork {
     private static final Logger LOGGER = Logger.getLogger(SimulatedNetwork.class.getName());
 
-    // Default values
+    // Default configuration constants
     private static final double DEFAULT_MESSAGE_LOSS_RATE = 0.0;
     private static final int DEFAULT_MIN_LATENCY = 0;
     private static final int DEFAULT_MAX_LATENCY = 0;
     private static final int DEFAULT_MAX_MESSAGES_PER_TICK = Integer.MAX_VALUE;
+    
+    // Default deterministic seed for reproducible test results
+    private static final long DEFAULT_RANDOM_SEED = 12345L;
 
     // Configuration
     private volatile double messageLossRate = DEFAULT_MESSAGE_LOSS_RATE;
@@ -107,12 +110,22 @@ public class SimulatedNetwork {
     }
 
     /**
-     * Creates a new SimulatedNetwork with the specified message delivery callback.
+     * Creates a new SimulatedNetwork with default deterministic settings.
+     * Uses a fixed random seed for reproducible test results.
      *
-     * @param messageDeliveryCallback The callback to invoke when messages are delivered
-     * @throws IllegalArgumentException if messageDeliveryCallback is null
+     * @param messageDeliveryCallback The callback to handle message delivery
      */
     public SimulatedNetwork(BiConsumer<Object, DeliveryContext> messageDeliveryCallback) {
+        this(messageDeliveryCallback, DEFAULT_RANDOM_SEED);
+    }
+
+    /**
+     * Creates a new SimulatedNetwork with a custom random seed.
+     * 
+     * @param messageDeliveryCallback The callback to handle message delivery
+     * @param randomSeed The seed for the random number generator (for deterministic behavior)
+     */
+    public SimulatedNetwork(BiConsumer<Object, DeliveryContext> messageDeliveryCallback, long randomSeed) {
         if (messageDeliveryCallback == null) {
             throw new IllegalArgumentException("Message delivery callback cannot be null");
         }
@@ -120,9 +133,11 @@ public class SimulatedNetwork {
         this.messageFilters = new ArrayList<>();
         this.statistics = new NetworkStatistics();
         this.messageQueue = new MessageQueue();
-        this.delayCalculator = new MessageDelayCalculator(DEFAULT_MIN_LATENCY, DEFAULT_MAX_LATENCY);
-        this.random = new Random();
+        this.random = new Random(randomSeed);  // ← DETERMINISTIC!
+        this.delayCalculator = new MessageDelayCalculator(DEFAULT_MIN_LATENCY, DEFAULT_MAX_LATENCY, this.random);
         this.currentTick = 0;
+        
+        LOGGER.log(Level.INFO, "Initialized SimulatedNetwork with deterministic random seed: {0}", randomSeed);
     }
 
     /**
