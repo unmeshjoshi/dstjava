@@ -24,7 +24,7 @@ public class QuorumKVStore extends Replica implements QuorumCallback {
     private static final Logger LOGGER = Logger.getLogger(QuorumKVStore.class.getName());
     
     private final List<String> replicaIds;
-    private final Map<String, StoredValue> storage = new ConcurrentHashMap<>();
+    private final Map<String, StoredValue> storage = new TreeMap<>();
     private final ClientState clientState = new ClientState();
     private final ReadRepairer readRepairer;
     private final AtomicLong clock = new AtomicLong(0);
@@ -55,21 +55,11 @@ public class QuorumKVStore extends Replica implements QuorumCallback {
                    " from " + allReplicas.size() + " replicas");
     }
     
-    /**
-     * Creates a new QuorumKVStore with default timeout.
-     *
-     * @param replicaId The ID of this replica
-     * @param messageBus The message bus for communication
-     * @param allReplicas The list of all replicas in the system
-     */
-    public QuorumKVStore(String replicaId, MessageBus messageBus, List<ReplicaEndpoint> allReplicas) {
-        this(replicaId, messageBus, allReplicas, 10); // Default timeout of 10 ticks
-    }
+
     
     @Override
     protected void processMessage(Object message, SimulatedNetwork.DeliveryContext from) {
-        if (message instanceof GetValueRequest) {
-            GetValueRequest getRequest = (GetValueRequest) message;
+        if (message instanceof GetValueRequest getRequest) {
             // Check if this is a request from another replica or from a client
             if (replicaIds.contains(getRequest.getClientId())) {
                 // This is a request from another replica, handle it locally
@@ -78,8 +68,7 @@ public class QuorumKVStore extends Replica implements QuorumCallback {
                 // This is a client request, start quorum process
                 processGetValueRequest(getRequest);
             }
-        } else if (message instanceof SetValueRequest) {
-            SetValueRequest setRequest = (SetValueRequest) message;
+        } else if (message instanceof SetValueRequest setRequest) {
             // Check if this is a request from another replica or from a client
             if (replicaIds.contains(setRequest.getClientId())) {
                 // This is a request from another replica, handle it locally
@@ -527,10 +516,8 @@ public class QuorumKVStore extends Replica implements QuorumCallback {
         if (simulator != null) {
             simulator.addMessageFilter((message, from, to) -> {
                 // Block messages from this replica to the target replica
-                if (from.equals(replicaId) && to.equals(targetReplicaId)) {
-                    return false; // Drop the message
-                }
-                return true; // Allow all other messages
+                return !from.equals(replicaId) || !to.equals(targetReplicaId); // Drop the message
+// Allow all other messages
             });
             LOGGER.info("Replica " + replicaId + " is now dropping messages to " + targetReplicaId);
         } else {

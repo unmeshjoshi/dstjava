@@ -106,36 +106,81 @@ public class DeterministicReplicationTest {
     
     /**
      * Check if a future is completed within a specified timeout.
+     * This method is fully deterministic and does not use any real-time delays.
      */
     private <T> boolean isFutureCompletedWithinTimeout(CompletableFuture<T> future, String operationName) {
-        // Increased tries from 20 to 40 to accommodate potentially longer delays with exponential distribution
-        for (int i = 0; i < 40; i++) {
-            if (future.isDone()) {
+        if (future.isDone()) {
+            if (future.isCompletedExceptionally()) {
+                LOGGER.warning(operationName + " completed with exception");
+                return false;
+            } else {
                 LOGGER.info(operationName + " completed successfully");
                 return true;
             }
-            
-            try {
-                Thread.sleep(50);  // Short wait before checking again
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        } else {
+            LOGGER.warning(operationName + " did not complete within the allocated simulation time");
+            return false;
+        }
+    }
+    
+    /**
+     * Check if a future has reached any conclusion (success or failure).
+     * Returns true for both successful completion and exceptional completion.
+     */
+    private <T> boolean isFutureCompleted(CompletableFuture<T> future, String operationName) {
+        if (future.isDone()) {
+            if (future.isCompletedExceptionally()) {
+                LOGGER.info(operationName + " completed with exception (this counts as completion)");
+            } else {
+                LOGGER.info(operationName + " completed successfully");
             }
+            return true;
+        } else {
+            LOGGER.warning(operationName + " did not complete within the allocated simulation time");
+            return false;
+        }
+    }
+    
+    /**
+     * Run simulation until a future completes or maximum ticks reached.
+     * This provides an alternative to the fixed-ticks-then-check pattern.
+     */
+    private <T> boolean runUntilFutureCompletes(CompletableFuture<T> future, String operationName, int maxTicks) {
+        for (int tick = 0; tick < maxTicks; tick++) {
+            if (future.isDone()) {
+                if (future.isCompletedExceptionally()) {
+                    LOGGER.warning(operationName + " completed with exception after " + tick + " ticks");
+                    return false;
+                } else {
+                    LOGGER.info(operationName + " completed successfully after " + tick + " ticks");
+                    return true;
+                }
+            }
+            
+            // Advance simulation by one tick
+            simulation.tick();
         }
         
-        LOGGER.warning(operationName + " did not complete within timeout");
+        LOGGER.warning(operationName + " did not complete within " + maxTicks + " ticks");
         return false;
     }
     
     /**
-     * Safely get a response from a future, avoiding potential deadlocks.
+     * Safely get a response from a future that should already be completed.
+     * This method is fully deterministic and does not use any real-time timeouts.
      */
     private <T> T getFutureResponse(CompletableFuture<T> future, String operationName) throws Exception {
+        if (!future.isDone()) {
+            throw new IllegalStateException(operationName + " future is not completed yet. " +
+                    "Ensure you call isFutureCompletedWithinTimeout() or runUntilFutureCompletes() first.");
+        }
+        
+        if (future.isCompletedExceptionally()) {
+            throw new RuntimeException(operationName + " completed exceptionally");
+        }
+        
         try {
-            if (!future.isDone()) {
-                LOGGER.warning(operationName + " not completed yet, forcing a short timeout");
-                return future.get(500, TimeUnit.MILLISECONDS);
-            }
-            return future.get(1, TimeUnit.MILLISECONDS);
+            return future.getNow(null);  // Get immediately since we know it's done
         } catch (Exception e) {
             LOGGER.severe("Error getting response for " + operationName + ": " + e.getMessage());
             throw e;
@@ -220,7 +265,7 @@ public class DeterministicReplicationTest {
         safeRunFor(5);
         
         // Check that the put failed (can't achieve quorum)
-        assertTrue(isFutureCompletedWithinTimeout(putFuture, "PUT operation with partition"), 
+        assertTrue(isFutureCompleted(putFuture, "PUT operation with partition"), 
                    "PUT operation with partition should complete (with failure)");
         
         // The operation should either be cancelled or completed with a failure response
@@ -371,7 +416,7 @@ public class DeterministicReplicationTest {
         // The operation might eventually succeed or fail depending on message loss patterns
         // Let's just verify that we reach a conclusion
         LOGGER.info("Checking if PUT operation completed (success or failure)");
-        assertTrue(isFutureCompletedWithinTimeout(putFuture, "PUT operation with message loss"), 
+        assertTrue(isFutureCompleted(putFuture, "PUT operation with message loss"), 
                    "PUT operation with message loss should complete (success or failure)");
         
         // Reset message loss rate
@@ -541,7 +586,7 @@ public class DeterministicReplicationTest {
         safeRunFor(15);  // Increased from 10 to 15
         
         // Should fail because replica-1 can't reach quorum
-        assertTrue(isFutureCompletedWithinTimeout(putFuture, "PUT operation after partition/crash"), 
+        assertTrue(isFutureCompleted(putFuture, "PUT operation after partition/crash"), 
                    "PUT operation after partition/crash should complete (with failure)");
         
         // The operation should either be cancelled or completed with a failure response
